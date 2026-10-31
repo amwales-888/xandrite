@@ -11,6 +11,8 @@ sorting, ratings, right-click actions, Manage folders), scanning, the thumbnail 
 one-time import of the Electron app's library, the interactive viewer, and models inside .zip, .7z and .rar archives.
 It keeps a log file. Not yet done: the installer.
 
+
+**Using the app:** see the [user manual](docs/getting-started.md).
 ## What is in the solution
 
 | Project | What it does |
