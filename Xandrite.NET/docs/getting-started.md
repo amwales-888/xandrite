@@ -8,7 +8,7 @@ and draws a thumbnail of each one. You can then search, sort, filter, rate and o
 
 Your files are never changed. Xandrite only reads them, and keeps what it learns in a library of its own.
 
-![The Xandrite library window, showing the sample models](images/02-library.png)
+![The Xandrite library window](images/02-library.png)
 
 ## Contents
 
@@ -132,7 +132,8 @@ If the file comes back, the next scan finds it again, with its rating and view i
 ## 5. Thumbnails
 
 After a scan, Xandrite draws a thumbnail for every model that doesn't have one yet. It works in the background, so
-you can carry on browsing. The status bar shows how far it has got:
+you can carry on browsing. The status bar shows how far it has got, along with the library totals ("57 with copies"
+counts models found in more than one place) and the last scan:
 
 ![The status bar while thumbnails are drawn](images/04-status-bar.png)
 
@@ -162,8 +163,6 @@ Xandrite remembers it. The status bar shows *(balanced)* or *(in the background)
 ---
 
 ## 6. Browsing the library
-
-![The parts of the library window](images/05-browsing.png)
 
 ### The folder tree
 
@@ -231,8 +230,6 @@ Give models from zero to five stars, to find your favourites later (sort or filt
 
 Right-click a tile, or a selection of tiles, for these actions:
 
-![The right-click menu](images/06-context-menu.png)
-
 - **Open:** opens the model in the viewer. Double-clicking or pressing **Enter** does the same.
 - **Show in folder:** opens File Explorer with the file selected. For a model inside an archive, it selects the archive.
 - **Download…:** copies the selected models into a folder you choose. Models inside archives are extracted as
@@ -244,8 +241,6 @@ Right-click a tile, or a selection of tiles, for these actions:
 - **Regenerate thumbnail:** draws the thumbnail again.
 - **Revert to automatic view:** forgets a view saved in the viewer, and redraws the thumbnail from the standard
   angle.
-
-![Find other copies of this model, showing two copies of the same gear](images/07-find-copies.png)
 
 Right-clicking a **folder** in the folder tree offers **Rescan this folder**, **Show in Explorer** and
 **Remove from library…**.
@@ -299,8 +294,6 @@ you left it.
 ## 10. Preferences
 
 The **Preferences ▾** menu at the top right of the library window:
-
-![The Preferences menu](images/10-preferences.png)
 
 | Item | What it does |
 |---|---|
