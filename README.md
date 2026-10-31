@@ -2,27 +2,27 @@
 
 *Every model has a side worth seeing.*
 
-Xandrite is a Windows and Linux desktop app for organising a large collection of `.stl` and `.3mf` files. Every file is identified by its
-SHA-256, so it can be found again after it is moved or renamed.
+Xandrite WAS a Windows and Linux desktop app - now its JUST a windows app for organising a large collection of `.stl` and `.3mf` files. Every file is identified by its
+SHA-256, so it can be found again after it is moved or renamed. Why drop Linux support? Let's be honest the only way to get a linux/windows desktop experience that works is through electron and against my better judgment I used it and it worked but was Janky. The app has now been ported to a windows only .NET WPF app, its lightning fast, still needs work making it prettier, but its already useful.  
 
-**Get the installer [Xandrite ![Latest release](https://img.shields.io/github/v/release/amwales-888/model-library)](https://github.com/amwales-888/model-library/releases/latest)**
+**Get the Windows 10/11 installer [Xandrite ![Latest release](https://img.shields.io/github/v/release/amwales-888/model-library)](https://github.com/amwales-888/model-library/releases/latest)**
 
 Q. Why do I need this?</br>
-A. You have thousands of models, squirelled away in directory you never look in, in multi-gigabyte .zip archives that are a pain to unpack and look through, but you know that somewhere in there is a hidden gem, you just lost it. Xandrite will help you find things and organise them.
+A. You have thousands of models, squirelled away in directories you never look in, in multi-gigabyte .zip archives that are a pain to unpack and look through, but you know that somewhere in there is a hidden gem, you just lost it. Xandrite will help you find the gems and organise them.
 
 Q. How do I run it?</BR>
 A. Get the installer, it's pretty simple.
 
 Q. WHere's the user manual?</BR>
-A. Take look here **[Getting started guide](xandrite/docs/getting-started.md)** (with screenshots).
+A. Take look here **[Getting started guide](Xandrite.NET/docs/getting-started.md)** (with screenshots).
 
-Q. I'm a developer, give me a sdecription of how it works and show me how to build it locally.</BR>
-A. Take look here **[Developer README](xandrite/README.md)**.
+Q. I'm a developer, give me a description of all the cool stuff, how it works and show me how to build it locally.</BR>
+A. Take look here **[Developer README](Xandrite.NET/README.md)**.
 
 Q. Hang on did you say you can change the orientation of the model in the thumbnail and it will remember it?</BR>
 A. I didn't but YES you can.
 
-![wibble](images/Capture.JPG)
+![wibble](Xandrite.NET/docs/Image.JPG)
 
 # TLDR - Disclaimer and Descent into Madness
 This application was completely written by AI. I was curious about how far the technology had progressed and, after talking to a number of people whose opinions I respect, I thought I would drop my prejudices and give it a try.
