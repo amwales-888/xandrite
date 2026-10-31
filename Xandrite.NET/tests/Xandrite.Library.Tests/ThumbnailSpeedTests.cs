@@ -60,6 +60,11 @@ public class ThumbnailSpeedTests
 
         public void Leave() => Interlocked.Decrement(ref _now);
 
+        public int Count
+        {
+            get { lock (this) return Priorities.Count; }
+        }
+
         public void Reset()
         {
             lock (this)
@@ -143,7 +148,9 @@ public class ThumbnailSpeedTests
         queue.Idle += () => idle.TrySetResult();
         queue.Start();
 
-        await Task.Delay(200);
+        // Wait until a few models have been drawn (however slow the machine), not a fixed time.
+        for (int waited = 0; recorder.Count < 3 && waited < 20_000; waited += 20) await Task.Delay(20);
+        Assert.True(recorder.Count >= 3, "nothing was drawn");
         Assert.Equal(1, recorder.MostAtOnce);
         recorder.Reset();
         queue.Speed = ThumbnailSpeed.Full;   // the waiting workers notice within a quarter of a second
