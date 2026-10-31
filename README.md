@@ -22,7 +22,7 @@ A. Take look here **[Developer README](Xandrite.NET/README.md)**.
 Q. Hang on did you say you can change the orientation of the model in the thumbnail and it will remember it?</BR>
 A. I didn't but YES you can.
 
-![wibble](Xandrite.NET/docs/Image.JPG)
+![wibble](Xandrite.NET/docs/images/02-library.png)
 
 # TLDR - Disclaimer and Descent into Madness
 This application was completely written by AI. I was curious about how far the technology had progressed and, after talking to a number of people whose opinions I respect, I thought I would drop my prejudices and give it a try.
