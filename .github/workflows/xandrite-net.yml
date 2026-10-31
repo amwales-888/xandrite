@@ -8,6 +8,7 @@ name: Xandrite.NET
 
 on:
   push:
+    branches: ['**']   # not tags: a net-v* tag is built and tested by the release workflow
     paths: ['Xandrite.NET/**', '.github/workflows/xandrite-net.yml']
   pull_request:
     paths: ['Xandrite.NET/**', '.github/workflows/xandrite-net.yml']
