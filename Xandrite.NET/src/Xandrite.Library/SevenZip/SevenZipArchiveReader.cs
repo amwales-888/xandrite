@@ -311,4 +311,44 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             }, cancellation);
             return result ?? throw new InvalidDataException("The file could not be read: " + (problem ?? "nothing was extracted"));
         }), cancellation);
+
+    /// <summary>
+    /// Every entry asked for, in one Extract call: for a solid archive the stream is decompressed once, from the start
+    /// to the last entry wanted, instead of once per entry.
+    /// </summary>
+    public Task ReadEntriesAsync(string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes, Func<EntryRead, Task> onEntry, CancellationToken cancellation) =>
+        Task.Run(() => BackgroundWork.Run(() =>
+        {
+            if (!File.Exists(archivePath)) throw new ModelGoneException("The archive is no longer there.");
+            using var archive = OpenArchive.Open(archivePath);
+            var wanted = new HashSet<string>(entryNames, StringComparer.Ordinal);
+            var found = new Dictionary<uint, Item>();
+            foreach (var item in archive.Items(int.MaxValue))
+            {
+                if (item.IsDirectory || !wanted.Remove(item.Name)) continue;   // the first entry of each name, as ReadEntryAsync
+                if (item.Encrypted) Report(new EntryRead(item.Name, null, false, "The file is password-protected, so it cannot be read."));
+                else if (item.Size > maxBytes) Report(new EntryRead(item.Name, null, false, "The file is too large to read from the archive."));
+                else found[item.Index] = item;
+            }
+            foreach (var name in wanted) Report(new EntryRead(name, null, Gone: true, Problem: null));   // no longer in the archive
+
+            if (found.Count > 0)
+            {
+                // The callback runs on 7-Zip's thread, one entry at a time; waiting in it holds back the next entry.
+                archive.Extract(found.Keys.ToList(), maxBytes, (index, content, code, tooLarge) =>
+                {
+                    var item = found[index];
+                    Report(content is null
+                        ? new EntryRead(item.Name, null, false, "The file could not be read: " + Describe(code, tooLarge))
+                        : new EntryRead(item.Name, content.ToArray(), false, null));
+                }, cancellation);
+            }
+            return 0;
+
+            void Report(EntryRead read)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                onEntry(read).GetAwaiter().GetResult();
+            }
+        }), cancellation);
 }

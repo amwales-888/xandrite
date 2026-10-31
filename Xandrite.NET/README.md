@@ -102,6 +102,10 @@ It works like the Electron app's window:
   the workers, below-normal priority, 7-Zip on a quarter of the cores) or *In the background* (one model at a time, lowest
   priority, 7-Zip on one thread). It can be changed while thumbnails are being drawn and takes effect from the next
   model. It is remembered, and changes are logged (`thumbs.speed`). Scanning and the viewer always run at full speed.
+- **Models inside archives** are read one archive at a time: every model the queue needs from an archive comes out
+  of a single pass, and models are drawn while the rest are still being read (idle workers help). A solid `.7z` used
+  to be decompressed from its start once per model; 80 models in a 15 MB solid archive now take about 1 s to read
+  instead of 36 s. Each archive is logged as `thumbs.archive`.
 - Drop folders on the window to add them.
 
 The grid is a virtualised list of rows, so it stays fast with very large libraries. Thumbnails are decoded on

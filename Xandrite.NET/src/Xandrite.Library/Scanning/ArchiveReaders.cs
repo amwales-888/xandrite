@@ -40,7 +40,44 @@ public interface IArchiveReader
 
     /// <summary>Reads one entry into memory. Throws <see cref="ModelGoneException"/> if the archive or entry is gone.</summary>
     Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation);
+
+    /// <summary>
+    /// Reads several entries, each reported to <paramref name="onEntry"/> once (with its bytes, or why it could not be
+    /// read), one at a time: the next is not read until the call returns. A reader of solid archives does this in one
+    /// pass, so the archive is decompressed once rather than once per entry. Throws if the archive itself cannot be
+    /// read (<see cref="ModelGoneException"/> if it is gone).
+    /// </summary>
+    Task ReadEntriesAsync(string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes, Func<EntryRead, Task> onEntry, CancellationToken cancellation) =>
+        ReadEntriesOneByOneAsync(this, archivePath, entryNames, maxBytes, onEntry, cancellation);
+
+    /// <summary>For archives that can jump straight to an entry (zip): the entries one by one.</summary>
+    protected static async Task ReadEntriesOneByOneAsync(IArchiveReader reader, string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes,
+        Func<EntryRead, Task> onEntry, CancellationToken cancellation)
+    {
+        if (!File.Exists(archivePath)) throw new ModelGoneException("The archive is no longer there.");
+        foreach (var name in entryNames)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            EntryRead read;
+            try
+            {
+                read = new EntryRead(name, await reader.ReadEntryAsync(archivePath, name, maxBytes, cancellation), Gone: false, Problem: null);
+            }
+            catch (ModelGoneException)
+            {
+                read = new EntryRead(name, null, Gone: true, Problem: null);
+            }
+            catch (Exception e) when (e is InvalidDataException)
+            {
+                read = new EntryRead(name, null, Gone: false, Problem: e.Message);
+            }
+            await onEntry(read);
+        }
+    }
 }
+
+/// <summary>One entry from <see cref="IArchiveReader.ReadEntriesAsync"/>: its bytes, or that it is gone, or why it could not be read.</summary>
+public sealed record EntryRead(string Name, byte[]? Bytes, bool Gone, string? Problem);
 
 /// <summary>Entry names: which to read, which to skip quietly.</summary>
 public static class ArchiveEntryNames

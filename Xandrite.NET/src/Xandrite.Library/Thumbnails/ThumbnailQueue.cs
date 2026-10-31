@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
+using System.Threading.Channels;
 using Xandrite.Framing;
 using Xandrite.Library.Logging;
 using Xandrite.Library.Scanning;
@@ -50,6 +52,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private int _total, _done, _failed, _skipped;
     private string? _current;
     private ThumbnailSpeed _speed;
+    private readonly ConcurrentDictionary<ArchiveStream, byte> _streams = new();
+    private int _archivesOpen;   // archives taken from the work but not finished: idle workers stay to help (under _gate)
 
     public ThumbnailQueue(LibraryDatabase db, LibraryLocation location, Func<IModelRenderer> createRenderer, ModelSource? source = null, int workers = 2)
     {
@@ -196,7 +200,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 lock (_gate) _total += jobs.Count;
                 Emit();
 
-                var work = new ConcurrentQueue<ThumbnailJobRow>(jobs);
+                var work = new ConcurrentQueue<WorkItem>(Plan(jobs));
                 await Task.WhenAll(Enumerable.Range(0, _renderers.Length).Select(slot => Task.Run(() => WorkerAsync(slot, work, cancellation))));
 
                 // The renderer broke: wait for Resume (which clears the message), then look at what is still pending.
@@ -258,7 +262,52 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         }
     }
 
-    private async Task WorkerAsync(int slot, ConcurrentQueue<ThumbnailJobRow> work, CancellationToken cancellation)
+    /* ---------- the work: loose models one by one, archives in one pass ---------- */
+
+    private abstract record WorkItem;
+
+    /// <summary>A model read on its own: a loose file, or the only model wanted from its archive.</summary>
+    private sealed record OneModel(ThumbnailJobRow Job) : WorkItem;
+
+    /// <summary>Several models from one archive, read in a single pass (a solid .7z is decompressed once, not once each).</summary>
+    private sealed record FromArchive(string Archive, IReadOnlyList<ThumbnailJobRow> Jobs) : WorkItem;
+
+    /// <summary>A model read from an archive and waiting to be drawn, with how long reading it took.</summary>
+    private sealed record ReadModel(ThumbnailJobRow Job, EntryRead Read, long ReadMs);
+
+    /// <summary>
+    /// The models coming out of one archive. The worker that took the archive draws them as they arrive; idle workers
+    /// help. Only a couple wait at a time, so memory stays small and the archive is read no faster than they are drawn.
+    /// </summary>
+    private sealed class ArchiveStream
+    {
+        public Channel<ReadModel> Models { get; } = Channel.CreateBounded<ReadModel>(new BoundedChannelOptions(2) { SingleWriter = true });
+        public Exception? Error { get; set; }
+        public ConcurrentDictionary<string, byte> Delivered { get; } = new();
+    }
+
+    /// <summary>Puts the models of each archive together (in the place of its first model), the rest one by one.</summary>
+    private IEnumerable<WorkItem> Plan(IReadOnlyList<ThumbnailJobRow> jobs)
+    {
+        var byArchive = jobs.Where(j => j.Container is not null && j.Entry is not null && j.Size <= MaxBytes)
+            .GroupBy(j => j.Container!, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var job in jobs)
+        {
+            if (job.Container is { } archive && byArchive.TryGetValue(archive, out var group) && group.Contains(job))
+            {
+                if (planned.Add(archive)) yield return new FromArchive(archive, group);
+            }
+            else
+            {
+                yield return new OneModel(job);
+            }
+        }
+    }
+
+    private async Task WorkerAsync(int slot, ConcurrentQueue<WorkItem> work, CancellationToken cancellation)
     {
         while (!cancellation.IsCancellationRequested)
         {
@@ -266,27 +315,197 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             var limits = Limits;
             if (slot >= limits.Workers)
             {
-                if (work.IsEmpty) return;
+                lock (_gate) if (work.IsEmpty && _archivesOpen == 0) return;
                 await Task.Delay(250, cancellation);
                 continue;
             }
-            if (!work.TryDequeue(out var job)) return;
             BackgroundWork.Current = limits;   // seen by the archive reader too
+            if (!await WaitIfPausedAsync(cancellation)) return;
 
-            Task resumed;
+            // Help draw what archives have already read, before starting anything new.
+            if (TryTakeRead(out var read))
+            {
+                await DrawReadAsync(slot, read);
+                continue;
+            }
+            WorkItem? item;
+            bool archivesOpen;
             lock (_gate)
             {
-                if (_blocked is not null) return;
-                resumed = _resumed.Task;
+                // Taken and counted together, so no worker can see "no work, no archives" while one is being opened.
+                if (work.TryDequeue(out item) && item is FromArchive) _archivesOpen++;
+                archivesOpen = _archivesOpen > 0;
             }
-            await resumed.WaitAsync(cancellation);
-            lock (_gate)
+            if (item is not null)
             {
-                if (_blocked is not null) return;
-                _current = Path.GetFileName(job.Path);
+                if (item is OneModel one)
+                {
+                    Showing(one.Job);
+                    await ProcessAsync(slot, one.Job, cancellation);
+                }
+                else
+                {
+                    await ReadArchiveAsync(slot, (FromArchive)item, cancellation);
+                }
+                continue;
             }
-            Emit();
-            await ProcessAsync(slot, job, cancellation);
+            if (!archivesOpen) return;
+            await WaitForReadAsync(cancellation);   // nothing new: wait for an archive being read to produce a model
+        }
+    }
+
+    /// <returns>False if the queue is blocked (the renderer broke): stop.</returns>
+    private async Task<bool> WaitIfPausedAsync(CancellationToken cancellation)
+    {
+        Task resumed;
+        lock (_gate)
+        {
+            if (_blocked is not null) return false;
+            resumed = _resumed.Task;
+        }
+        await resumed.WaitAsync(cancellation);
+        lock (_gate) return _blocked is null;
+    }
+
+    private void Showing(ThumbnailJobRow job)
+    {
+        lock (_gate) _current = Path.GetFileName(job.Path);
+        Emit();
+    }
+
+    private bool TryTakeRead(out ReadModel read)
+    {
+        foreach (var stream in _streams.Keys)
+        {
+            if (stream.Models.Reader.TryRead(out read!)) return true;
+        }
+        read = null!;
+        return false;
+    }
+
+    private async Task WaitForReadAsync(CancellationToken cancellation)
+    {
+        var waits = _streams.Keys.Where(s => !s.Models.Reader.Completion.IsCompleted)
+            .Select(s => s.Models.Reader.WaitToReadAsync(cancellation).AsTask())
+            .Append(Task.Delay(200, cancellation))
+            .ToList();
+        await Task.WhenAny(waits);
+        cancellation.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>
+    /// Reads the archive's models in one pass on another thread while drawing them here (with help from idle workers).
+    /// If the archive cannot be read at all, the models it had not delivered get the same answer as when read one by one.
+    /// </summary>
+    private async Task ReadArchiveAsync(int slot, FromArchive group, CancellationToken cancellation)
+    {
+        try
+        {
+            await ReadArchiveCoreAsync(slot, group, cancellation);
+        }
+        finally
+        {
+            lock (_gate) _archivesOpen--;
+        }
+    }
+
+    private async Task ReadArchiveCoreAsync(int slot, FromArchive group, CancellationToken cancellation)
+    {
+        var reader = _source.ReaderFor(group.Archive);
+        if (reader is null)
+        {
+            foreach (var job in group.Jobs) Stale(job, "Reading models from " + Path.GetExtension(group.Archive) + " archives is not available yet.");
+            return;
+        }
+
+        long started = Stopwatch.GetTimestamp();
+        var byEntry = new Dictionary<string, ThumbnailJobRow>(StringComparer.Ordinal);
+        foreach (var job in group.Jobs) byEntry.TryAdd(job.Entry!, job);
+        var stream = new ArchiveStream();
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var limits = BackgroundWork.Current;
+        var producer = Task.Run(async () =>
+        {
+            BackgroundWork.Current = limits;
+            long last = Stopwatch.GetTimestamp();
+            try
+            {
+                await reader.ReadEntriesAsync(group.Archive, byEntry.Keys, MaxBytes, async read =>
+                {
+                    if (!byEntry.TryGetValue(read.Name, out var job)) return;
+                    long now = Stopwatch.GetTimestamp();
+                    long readMs = (long)Stopwatch.GetElapsedTime(last, now).TotalMilliseconds;
+                    last = now;
+                    stream.Delivered[read.Name] = 0;
+                    await stream.Models.Writer.WriteAsync(new ReadModel(job, read, readMs), stop.Token);
+                }, stop.Token);
+            }
+            catch (Exception e)
+            {
+                stream.Error = e;
+            }
+            finally
+            {
+                stream.Models.Writer.TryComplete();
+            }
+        }, CancellationToken.None);
+
+        _streams[stream] = 0;
+        try
+        {
+            while (await stream.Models.Reader.WaitToReadAsync(cancellation))
+            {
+                if (!await WaitIfPausedAsync(cancellation)) return;   // the renderer broke: what is left stays pending
+                if (stream.Models.Reader.TryRead(out var read)) await DrawReadAsync(slot, read);
+            }
+        }
+        finally
+        {
+            stop.Cancel();
+            _streams.TryRemove(stream, out _);
+            await producer;
+        }
+
+        var notRead = group.Jobs.Where(j => !stream.Delivered.ContainsKey(j.Entry!)).ToList();
+        if (stream.Error is { } error and not OperationCanceledException)
+        {
+            foreach (var job in notRead) ReadFailed(job, error, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
+        else if (!cancellation.IsCancellationRequested)
+        {
+            foreach (var job in notRead) Stale(job, "the file is no longer where the scan found it");
+        }
+        Log.Info("thumbs.archive", ("archive", group.Archive), ("models", group.Jobs.Count), ("read", stream.Delivered.Count),
+            ("ms", (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+    }
+
+    private async Task DrawReadAsync(int slot, ReadModel model)
+    {
+        var (job, read, readMs) = model;
+        Showing(job);
+        long started = Stopwatch.GetTimestamp() - (long)(readMs * Stopwatch.Frequency / 1000.0);   // so ms= includes reading, as for loose files
+        if (read.Gone) Stale(job, "the file is no longer where the scan found it");
+        else if (read.Bytes is null) FailJob(job, "Could not read the file: " + read.Problem, readMs);
+        else await DrawAsync(slot, job, read.Bytes, started, readMs);
+    }
+
+    /// <summary>What a model that could not be read is recorded as: gone, not readable here, or failed.</summary>
+    private void ReadFailed(ThumbnailJobRow job, Exception e, long ms)
+    {
+        switch (e)
+        {
+            case ModelGoneException:
+                Stale(job, "the file is no longer where the scan found it");
+                break;
+            case NotSupportedException:
+                Stale(job, e.Message);   // an archive that cannot be read here (7z.dll missing): keep any old image
+                break;
+            case IOException or UnauthorizedAccessException or InvalidDataException:
+                FailJob(job, "Could not read the file: " + e.Message, ms);
+                break;
+            default:
+                ExceptionDispatchInfo.Throw(e);
+                break;
         }
     }
 
@@ -307,32 +526,25 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             bytes = await _source.ReadAsync(new ModelLocation(job.Path, job.Container, job.Entry), MaxBytes, cancellation);
         }
-        catch (ModelGoneException)
+        catch (Exception e) when (e is ModelGoneException or NotSupportedException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            Stale(job, "the file is no longer where the scan found it");
+            ReadFailed(job, e, Ms());
             return;
         }
-        catch (NotSupportedException e)
-        {
-            Stale(job, e.Message);   // an archive that cannot be read here (7z.dll missing): keep any old image
-            return;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
-        {
-            Fail(job, "Could not read the file: " + e.Message);
-            return;
-        }
+        await DrawAsync(slot, job, bytes, started, Ms());
+    }
+
+    /// <summary>Checks the bytes are still the model the scan found, draws it and saves the image.</summary>
+    private async Task DrawAsync(int slot, ThumbnailJobRow job, byte[] bytes, long started, long readMs)
+    {
+        long Ms() => (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        void Fail(ThumbnailJobRow failed, string message) => FailJob(failed, message, Ms());
 
         if (BackgroundWork.Run(() => Convert.ToHexStringLower(SHA256.HashData(bytes))) != job.Sha256)
         {
             Stale(job, "the file changed since it was scanned");
             return;
         }
-        long readMs = Ms();
 
         ThumbnailResult result;
         SavedView? usedView;
