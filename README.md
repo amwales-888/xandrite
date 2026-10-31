@@ -2,8 +2,8 @@
 
 *Every model has a side worth seeing.*
 
-Xandrite WAS a Windows and Linux desktop app - now its JUST a windows app for organising a large collection of `.stl` and `.3mf` files. Every file is identified by its
-SHA-256, so it can be found again after it is moved or renamed. Why drop Linux support? Let's be honest the only way to get a linux/windows desktop experience that works is through electron and against my better judgment I used it and it worked but was Janky. The app has now been ported to a windows only .NET WPF app, its lightning fast, still needs work making it prettier, but its already useful.  
+Xandrite WAS a Windows 10/11 and Linux desktop app - now its JUST a Windows 10/11 app. It's for organising a large collection of `.stl` and `.3mf` files. Every file is identified by its
+SHA-256, so it can be found again after it is moved or renamed. Why drop Linux support? Let's be honest the only way to get a linux/windows desktop experience that works is through electron and against my better judgment I used it and it worked but was Janky. It still needs work making it prettier, but it's already useful.
 
 **Get the Windows 10/11 installer [Xandrite ![Latest release](https://img.shields.io/github/v/release/amwales-888/model-library)](https://github.com/amwales-888/model-library/releases/latest)**
 
@@ -71,3 +71,5 @@ Oh today, Tuesday evening Claude built the actions to instruct GitHub how to gen
 To show how bad it got, I started on Tuesday evening, NOT Sunday and today is Thursday, NOT Tuesday. I am retired and get weekdays muddled now.
 
 Ok so installers done, what about branding, all things need a name. Model-Library isnt going to cut it. I want something that not confused by something else when you search for it. Claude gave me some ideas and not after that, I'm not sure, sounds a little harsh, like a detergant. I'll give it a few days and see...
+
+It's Saturday, Claude was busy last night, I asked it to port everything to a .NET WPF application for Windows 10/11. I abandoned electron and the evil that is Javascript, node and npm. The cargo cult of downloading god knows what and the [600 node packages required for a HelloWorld app](https://news.ycombinator.com/item?id=47074571)
