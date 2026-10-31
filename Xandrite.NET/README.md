@@ -15,7 +15,7 @@ It keeps a log file. Not yet done: the installer.
 
 | Project | What it does |
 |---|---|
-| `src/Xandrite` | The WPF app (`Xandrite.exe`): the library window, the viewer, Manage folders, the thumbnail preview, and the image loader. Thin: the logic is in `Xandrite.Presentation`. |
+| `src/Xandrite` | The WPF app (`Xandrite.exe`): the library window, the viewer, Manage folders, About, and the image loader. Thin: the logic is in `Xandrite.Presentation`. |
 | `src/Xandrite.Presentation` | The windows' logic as plain view models (no WPF types). `LibraryViewModel` covers filters, sorting, the tree, tiles in rows, selection, ratings, scanning and thumbnail status. `ViewerViewModel` covers frames, orbiting, Update, Revert, rating and export. Tested on any OS. |
 | `src/Xandrite.Core` | Everything that needs no GPU: STL and 3MF readers, camera framing, lighting and material values, the view settings stored in each PNG, the PNG writer. No Windows dependencies, so it builds and tests anywhere. |
 | `src/Xandrite.Rendering.Direct3D11` | The renderer. Hand-written COM interop to `d3d11.dll`, `dxgi.dll` and `d3dcompiler_47.dll` (all part of Windows), plus the HLSL shader. No NuGet packages. |
@@ -97,7 +97,7 @@ It works like the Electron app's window:
 - **Status bar:** library counts, scan progress (with Cancel), thumbnail progress (with Pause, Resume and Retry failed),
   and Rescan All.
 - **Preferences ▾:** Manage folders… (add several, then they are scanned when the window closes), Search inside
-  archives, Thumbnail speed, Thumbnail preview…, Open data folder, Show log file.
+  archives, Thumbnail speed, Open data folder, Show log file, the update options and About Xandrite….
 - **Thumbnail speed:** *Full speed* (every worker, normal priority; 7-Zip decompresses on every core), *Balanced* (half
   the workers, below-normal priority, 7-Zip on a quarter of the cores) or *In the background* (one model at a time, lowest
   priority, 7-Zip on one thread). It can be changed while thumbnails are being drawn and takes effect from the next
@@ -122,8 +122,9 @@ of the Electron app's viewer:
 - **Update thumbnail** replaces the model's library thumbnail with what you see (512 px) and stores the view, so a
   later redraw uses it. The grid shows the new image straight away. **Revert to automatic view** forgets it.
 - **Z up** turns the file's Z axis upwards (on by default, as STL and 3MF files are normally Z-up).
-- **Advanced** saves the view as a PNG at 256 to 2048 px and shows the view settings stored inside it.
-- Open file… or drop a file onto the viewer to look at models outside the library.
+- **Advanced** → **Export as…** saves the view as a PNG at 256 to 2048 px, named after the model by default, and
+  shows the view settings stored inside it.
+- The viewer is opened from the library. A file dropped onto it can be looked at too, even from outside the library.
 
 Frames are drawn with the same Direct3D 11 renderer as the thumbnails, off screen on a background thread, then
 shown in the window. While one frame is drawn, further mouse movement is gathered into a single next frame, so the

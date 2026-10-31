@@ -67,8 +67,8 @@ public interface ILibraryShell
     /// <summary>A file to save to. Null if cancelled.</summary>
     string? PickSaveFile(string title, string suggestedName, string filter);
 
-    /// <summary>A file to open. Null if cancelled.</summary>
-    string? PickOpenFile(string title, string filter);
+    /// <summary>The About box.</summary>
+    void ShowAbout(AboutInfo about);
 
     /// <summary>Opens a file in the program Windows uses for it (shows it in Explorer if there is none).</summary>
     void OpenFile(string path);
@@ -76,6 +76,9 @@ public interface ILibraryShell
     /// <summary>Shows a model in the viewer.</summary>
     void OpenModel(ViewerDocument document);
 }
+
+/// <summary>What the About box says.</summary>
+public sealed record AboutInfo(string Version, string Description, string Updates, string Link);
 
 /// <summary>A model for the viewer: its bytes, and whether it was opened from the library (only then can it be rated).</summary>
 public sealed record ViewerDocument(string Name, string Format, byte[] Bytes, bool FromLibrary);

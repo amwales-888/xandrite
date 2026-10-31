@@ -148,7 +148,10 @@ public sealed class UpdateViewModelTests : IDisposable
         Assert.True(vm.IsReady);
         Assert.True(vm.RestartCommand.CanExecute(null));
         vm.AboutCommand.Execute(null);
-        Assert.Contains("Xandrite 0.3.0", Assert.Single(_shell.Messages));
+        Assert.Empty(_shell.Messages);
+        Assert.Equal("0.3.0", _shell.About!.Version);
+        Assert.Contains("0.4.0 has been downloaded", _shell.About.Updates);
+        Assert.Equal("https://github.com/amwales-888/xandrite", _shell.About.Link);
     }
 
     [Fact]

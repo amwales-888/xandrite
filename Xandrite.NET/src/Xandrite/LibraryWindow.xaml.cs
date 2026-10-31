@@ -215,8 +215,6 @@ public partial class LibraryWindow : Window
         if (dialog.Added.Count > 0) _ = _vm.AddFoldersAsync(dialog.Added);
     }
 
-    private void OnOpenPreview(object sender, RoutedEventArgs e) => new PreviewWindow { Owner = this }.Show();
-
     private void OnDragOver(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Any(Directory.Exists)

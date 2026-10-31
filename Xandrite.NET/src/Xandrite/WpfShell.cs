@@ -109,11 +109,11 @@ public sealed class WpfShell : ILibraryShell
         return picked == true ? dialog.FileName : null;
     }
 
-    public string? PickOpenFile(string title, string filter)
+    public void ShowAbout(AboutInfo about)
     {
-        var dialog = new OpenFileDialog { Title = title, Filter = filter };
-        bool? picked = Current is { } owner ? dialog.ShowDialog(owner) : dialog.ShowDialog();
-        return picked == true ? dialog.FileName : null;
+        var window = new AboutWindow(about);
+        if (Current is { } owner) window.Owner = owner;
+        window.ShowDialog();
     }
 
     public void OpenModel(ViewerDocument document)

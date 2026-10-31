@@ -155,8 +155,7 @@ public class ViewerViewModelTests
         string path = Path.Combine(f.Dir, "outside.stl");
         File.WriteAllText(path, Stl.Replace("solid t", "solid outside"));
         var viewer = Viewer(f);
-        f.Shell.FileToOpen = path;   // as if chosen with Open file…
-        await NextFrame(viewer, () => _ = viewer.OpenFileAsync());
+        await NextFrame(viewer, () => _ = viewer.OpenPathAsync(path));   // as if dropped on the viewer
         Assert.True(viewer.HasModel);
         Assert.False(viewer.CanUpdate);
         Assert.False(viewer.CanRate);
@@ -164,7 +163,7 @@ public class ViewerViewModelTests
     }
 
     [Fact]
-    public async Task ABadFileIsReportedAndSaveWritesAPngOfTheChosenSize()
+    public async Task ABadFileIsReportedAndExportWritesAPngOfTheChosenSizeNamedAfterTheModel()
     {
         var (f, viewer, row) = await OpenFromLibrary();
         await using var cleanup = f;
@@ -175,6 +174,8 @@ public class ViewerViewModelTests
         f.Shell.SaveTo = Path.Combine(f.Dir, "export.png");
         viewer.ExportSize = 256;
         await viewer.SavePngAsync();
+        Assert.Equal(Path.GetFileNameWithoutExtension(row.Name) + ".png", f.Shell.SuggestedName);   // not the SHA-256
+        Assert.StartsWith("Exported ", viewer.StatusText);
         byte[] png = File.ReadAllBytes(f.Shell.SaveTo);
         Assert.Equal(256, png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19]);   // IHDR width
     }

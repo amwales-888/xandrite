@@ -169,12 +169,12 @@ public sealed class UpdateViewModel : ObservableObject
     private void About()
     {
         string updates = !_updates.IsInstalled
-            ? "Not installed with Setup, so it does not update itself."
+            ? "This copy was not installed with Setup, so it does not update itself."
             : _readyVersion is { } ready
                 ? $"Version {ready} has been downloaded and will be installed when Xandrite restarts."
                 : CheckAutomatically ? "Checks for updates automatically." : "Automatic update checks are turned off.";
-        _shell.ShowMessage("About Xandrite",
-            $"Xandrite {_updates.CurrentVersion}\n\nBrowse 3D models (STL, 3MF), including inside archives, by thumbnail.\n\n{updates}\n\nhttps://github.com/amwales-888/xandrite");
+        _shell.ShowAbout(new AboutInfo(_updates.CurrentVersion,
+            "Browse 3D models (STL, 3MF), including those inside archives, by thumbnail.", updates, "https://github.com/amwales-888/xandrite"));
     }
 
     private void SetBusy(bool busy)

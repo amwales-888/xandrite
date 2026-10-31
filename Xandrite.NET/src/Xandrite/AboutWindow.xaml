@@ -1,0 +1,30 @@
+<Window x:Class="Xandrite.App.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About Xandrite"
+        Icon="Xandrite.ico"
+        SizeToContent="WidthAndHeight" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="White">
+    <DockPanel Margin="20,20,20,14">
+        <!-- OK, bottom right -->
+        <Button DockPanel.Dock="Bottom" Content="OK" IsDefault="True" IsCancel="True" MinWidth="80" Padding="10,3"
+                HorizontalAlignment="Right" Margin="0,18,0,0" />
+
+        <!-- The logo on the left, the text to its right -->
+        <Image x:Name="Logo" DockPanel.Dock="Left" Width="96" Height="96" VerticalAlignment="Top" Margin="0,2,20,0"
+               RenderOptions.BitmapScalingMode="HighQuality" />
+
+        <StackPanel MaxWidth="380">
+            <TextBlock Text="Xandrite" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock x:Name="VersionText" Foreground="#5A6B78" Margin="0,2,0,12" />
+            <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" Foreground="#3A4A56" Margin="0,0,0,10" />
+            <TextBlock x:Name="UpdatesText" TextWrapping="Wrap" Foreground="#3A4A56" Margin="0,0,0,10" />
+            <TextBlock>
+                <Hyperlink x:Name="Link" RequestNavigate="OnRequestNavigate">
+                    <Run x:Name="LinkText" />
+                </Hyperlink>
+            </TextBlock>
+        </StackPanel>
+    </DockPanel>
+</Window>

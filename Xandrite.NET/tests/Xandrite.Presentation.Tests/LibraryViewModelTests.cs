@@ -27,15 +27,21 @@ public class LibraryViewModelTests
         public (string Path, bool SelectFile)? Revealed;
         public ViewerDocument? Opened;
         public string? SaveTo;
-        public string? FileToOpen;
+        public string? SuggestedName;
+        public AboutInfo? About;
 
         public string? PickFolder(string title) => FolderToPick;
         public RemoveChoice ConfirmRemoveFolder(string folder, long files) => RemoveAnswer;
         public void ShowMessage(string title, string message) => Messages.Add(message);
         public void CopyText(string text) => Clipboard = text;
         public void Reveal(string path, bool selectFile) => Revealed = (path, selectFile);
-        public string? PickSaveFile(string title, string suggestedName, string filter) => SaveTo;
-        public string? PickOpenFile(string title, string filter) => FileToOpen;
+        public string? PickSaveFile(string title, string suggestedName, string filter)
+        {
+            SuggestedName = suggestedName;
+            return SaveTo;
+        }
+
+        public void ShowAbout(AboutInfo about) => About = about;
         public void OpenModel(ViewerDocument document) => Opened = document;
         public string? OpenedFile;
         public void OpenFile(string path) => OpenedFile = path;

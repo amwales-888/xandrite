@@ -70,7 +70,6 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         UpdateThumbnailCommand = new RelayCommand(() => _ = UpdateThumbnailAsync(), () => HasModel && CanUpdate);
         RevertCommand = new RelayCommand(Revert, () => HasModel && HasCustomView);
         SavePngCommand = new RelayCommand(() => _ = SavePngAsync(), () => HasModel);
-        OpenFileCommand = new RelayCommand(() => _ = OpenFileAsync());
     }
 
     /// <summary>A new frame, on the UI thread. Its pixels are RGBA and may be changed by the handler (they are not reused until the next frame).</summary>
@@ -90,7 +89,6 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
     public RelayCommand UpdateThumbnailCommand { get; }
     public RelayCommand RevertCommand { get; }
     public RelayCommand SavePngCommand { get; }
-    public RelayCommand OpenFileCommand { get; }
 
     /* ---------- what is shown ---------- */
 
@@ -228,13 +226,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
 
     /* ---------- loading ---------- */
 
-    public async Task OpenFileAsync()
-    {
-        string? path = _shell.PickOpenFile("Open a 3D model", "3D models (*.stl;*.3mf)|*.stl;*.3mf|All files (*.*)|*.*");
-        if (path is not null) await OpenPathAsync(path);
-    }
-
-    /// <summary>A file dropped on the viewer or chosen with Open. It can still update its library thumbnail if the library knows it.</summary>
+    /// <summary>A file dropped on the viewer. It can still update its library thumbnail if the library knows it.</summary>
     public async Task OpenPathAsync(string path)
     {
         byte[] bytes;
@@ -523,22 +515,22 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         ViewReverted?.Invoke(sha);
     }
 
-    /// <summary>Saves the current view as a PNG of the size chosen under Advanced. Named after the SHA-256, as before.</summary>
+    /// <summary>Exports the current view as a PNG of the size chosen under Advanced, named after the model by default.</summary>
     public async Task SavePngAsync()
     {
         if (_mesh is null) return;
-        string suggested = _sha is { } sha ? sha + ".png" : Path.GetFileNameWithoutExtension(FileName) + ".thumb.png";
-        string? path = _shell.PickSaveFile("Save the view as a PNG", suggested, "PNG image (*.png)|*.png");
+        string suggested = Path.GetFileNameWithoutExtension(FileName) + ".png";   // named after the model, not its SHA-256
+        string? path = _shell.PickSaveFile("Export the view as a PNG", suggested, "PNG image (*.png)|*.png");
         if (path is null) return;
         try
         {
             var (png, _) = await DrawThumbnailAsync(_exportSize);
             await File.WriteAllBytesAsync(path, png);
-            StatusText = "Saved " + path;
+            StatusText = "Exported " + path;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or RendererException)
         {
-            StatusText = "Could not save the image: " + e.Message;
+            StatusText = "Could not export the image: " + e.Message;
         }
     }
 
