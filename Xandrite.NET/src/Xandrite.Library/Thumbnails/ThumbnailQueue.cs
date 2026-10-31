@@ -49,6 +49,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private string? _blocked;
     private int _total, _done, _failed, _skipped;
     private string? _current;
+    private ThumbnailSpeed _speed;
 
     public ThumbnailQueue(LibraryDatabase db, LibraryLocation location, Func<IModelRenderer> createRenderer, ModelSource? source = null, int workers = 2)
     {
@@ -58,6 +59,29 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         _source = source ?? ModelSource.Default;
         _renderers = new IModelRenderer?[Math.Clamp(workers, 1, 16)];
     }
+
+    /// <summary>
+    /// How hard to work. Takes effect from the next model: workers beyond the new number finish the model in hand
+    /// and wait.
+    /// </summary>
+    public ThumbnailSpeed Speed
+    {
+        get { lock (_gate) return _speed; }
+        set
+        {
+            lock (_gate)
+            {
+                if (_speed == value) return;
+                _speed = value;
+            }
+            var limits = Limits;
+            Log.Info("thumbs.speed", ("speed", value.ToString().ToLowerInvariant()), ("workers", limits.Workers),
+                ("priority", limits.Priority.ToString().ToLowerInvariant()), ("archive_threads", limits.ArchiveThreads?.ToString() ?? "all"));
+        }
+    }
+
+    /// <summary>What <see cref="Speed"/> means on this machine.</summary>
+    public WorkLimits Limits => WorkLimits.For(Speed, _renderers.Length, Environment.ProcessorCount);
 
     /// <summary>Models larger than this are not drawn (recorded as failed with a reason).</summary>
     public long MaxBytes { get; init; } = 512L * 1024 * 1024;
@@ -158,7 +182,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             Directory.CreateDirectory(_location.ThumbnailFolder);
             ForgetMissingImages();
-            Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", _renderers.Length));
+            Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()));
 
             while (!cancellation.IsCancellationRequested)
             {
@@ -236,8 +260,19 @@ public sealed class ThumbnailQueue : IAsyncDisposable
 
     private async Task WorkerAsync(int slot, ConcurrentQueue<ThumbnailJobRow> work, CancellationToken cancellation)
     {
-        while (!cancellation.IsCancellationRequested && work.TryDequeue(out var job))
+        while (!cancellation.IsCancellationRequested)
         {
+            // A slower speed leaves the higher-numbered workers idle until it is raised again (or the work runs out).
+            var limits = Limits;
+            if (slot >= limits.Workers)
+            {
+                if (work.IsEmpty) return;
+                await Task.Delay(250, cancellation);
+                continue;
+            }
+            if (!work.TryDequeue(out var job)) return;
+            BackgroundWork.Current = limits;   // seen by the archive reader too
+
             Task resumed;
             lock (_gate)
             {
@@ -292,7 +327,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             return;
         }
 
-        if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != job.Sha256)
+        if (BackgroundWork.Run(() => Convert.ToHexStringLower(SHA256.HashData(bytes))) != job.Sha256)
         {
             Stale(job, "the file changed since it was scanned");
             return;
@@ -308,7 +343,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             var view = usedView is { } saved
                 ? new StoredView(ToVector(saved.Position), ToVector(saved.Target), (float)saved.FovDeg, saved.ZUp)
                 : null;
-            result = new ThumbnailGenerator(renderer).Generate(new ThumbnailJob(bytes, job.Format, Path.GetFileName(job.Path), job.Sha256, view));
+            result = BackgroundWork.Run(() => new ThumbnailGenerator(renderer).Generate(new ThumbnailJob(bytes, job.Format, Path.GetFileName(job.Path), job.Sha256, view)));
         }
         catch (RendererException e)
         {

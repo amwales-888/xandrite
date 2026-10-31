@@ -67,6 +67,7 @@ internal static unsafe class SevenZipNative
     public static readonly Guid IID_IArchiveExtractCallback = Iid(6, 0x20);
     public static readonly Guid IID_IArchiveOpenVolumeCallback = Iid(6, 0x30);
     public static readonly Guid IID_IInArchive = Iid(6, 0x60);
+    public static readonly Guid IID_ISetProperties = Iid(6, 0x03);
 
     /* ---------- loading the library ---------- */
 
@@ -112,6 +113,52 @@ internal static unsafe class SevenZipNative
     /* ---------- IUnknown and IInArchive ---------- */
 
     private static void** Vtbl(nint p) => *(void***)p;
+
+    public static int QueryInterface(nint p, Guid* iid, nint* result) =>
+        ((delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)Vtbl(p)[0])(p, iid, result);
+
+    /// <summary>
+    /// Limits how many threads the handler decompresses with (7-Zip's "mt" switch), before the archive is opened.
+    /// False if this handler has no settings (then it decides for itself).
+    /// </summary>
+    public static bool SetThreads(nint archive, int threads)
+    {
+        Guid iid = IID_ISetProperties;
+        nint setter = 0;
+        if (QueryInterface(archive, &iid, &setter) != S_OK || setter == 0) return false;
+        try
+        {
+            nint name = Marshal.AllocHGlobal(3 * CharSize);   // "mt" and a terminator, as wide characters
+            try
+            {
+                new Span<byte>((void*)name, 3 * CharSize).Clear();
+                WriteWide(name, 0, 'm');
+                WriteWide(name, 1, 't');
+                PropVariant value = default;
+                value.Type = VT_UI4;
+                value.UInt32 = (uint)Math.Max(1, threads);
+                nint* names = stackalloc nint[1];
+                names[0] = name;
+                // ISetProperties::SetProperties(const wchar_t *const *names, const PROPVARIANT *values, UInt32 count)
+                int hr = ((delegate* unmanaged[Stdcall]<nint, nint*, PropVariant*, uint, int>)Vtbl(setter)[3])(setter, names, &value, 1);
+                return hr == S_OK;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(name);
+            }
+        }
+        finally
+        {
+            Release(setter);
+        }
+    }
+
+    private static void WriteWide(nint text, int index, char c)
+    {
+        if (CharSize == 2) ((ushort*)text)[index] = c;
+        else ((uint*)text)[index] = c;
+    }
 
     public static uint Release(nint p) => ((delegate* unmanaged[Stdcall]<nint, uint>)Vtbl(p)[2])(p);
 

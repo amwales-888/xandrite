@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using Xandrite.Library.Scanning;
+using Xandrite.Library.Thumbnails;
 using static Xandrite.Library.SevenZip.SevenZipNative;
 
 namespace Xandrite.Library.SevenZip;
@@ -83,6 +84,9 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 stream.Dispose();
                 throw new NotSupportedException("this copy of 7-Zip cannot read " + (format == Format7z ? "7z" : "RAR") + " archives");
             }
+
+            // In the thumbnail queue at a slower speed: decompress with fewer threads (7-Zip uses every core otherwise).
+            if (BackgroundWork.Current?.ArchiveThreads is { } threads) SetThreads(archive, threads);
 
             var input = new InStream(stream);
             var callback = new OpenCallback(path);
@@ -289,7 +293,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
         }, cancellation);
 
     public Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation) =>
-        Task.Run(() =>
+        Task.Run(() => BackgroundWork.Run(() =>
         {
             if (!File.Exists(archivePath)) throw new ModelGoneException("The archive is no longer there.");
             using var archive = OpenArchive.Open(archivePath);
@@ -306,5 +310,5 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 else result = content.ToArray();
             }, cancellation);
             return result ?? throw new InvalidDataException("The file could not be read: " + (problem ?? "nothing was extracted"));
-        }, cancellation);
+        }), cancellation);
 }

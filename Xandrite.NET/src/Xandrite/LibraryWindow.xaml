@@ -103,6 +103,11 @@
                         <MenuItem Header="Manage folders…" Click="OnManageFolders" />
                         <MenuItem Header="Add folder…" Command="{Binding AddFolderCommand}" />
                         <MenuItem Header="Search inside archives (.zip)" IsCheckable="True" IsChecked="{Binding SearchInsideArchives}" />
+                        <MenuItem Header="Thumbnail speed">
+                            <MenuItem Header="Full speed (every core)" IsCheckable="True" IsChecked="{Binding SpeedFull}" />
+                            <MenuItem Header="Balanced (half, lower priority)" IsCheckable="True" IsChecked="{Binding SpeedBalanced}" />
+                            <MenuItem Header="In the background (one at a time, lowest priority)" IsCheckable="True" IsChecked="{Binding SpeedBackground}" />
+                        </MenuItem>
                         <Separator />
                         <MenuItem Header="Thumbnail preview…" Click="OnOpenPreview" />
                         <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />

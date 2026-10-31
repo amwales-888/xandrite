@@ -97,7 +97,11 @@ It works like the Electron app's window:
 - **Status bar:** library counts, scan progress (with Cancel), thumbnail progress (with Pause, Resume and Retry failed),
   and Rescan All.
 - **Preferences ▾:** Manage folders… (add several, then they are scanned when the window closes), Search inside
-  archives, Thumbnail preview…, Open data folder, Show log file.
+  archives, Thumbnail speed, Thumbnail preview…, Open data folder, Show log file.
+- **Thumbnail speed:** *Full speed* (every worker, normal priority; 7-Zip decompresses on every core), *Balanced* (half
+  the workers, below-normal priority, 7-Zip on a quarter of the cores) or *In the background* (one model at a time, lowest
+  priority, 7-Zip on one thread). It can be changed while thumbnails are being drawn and takes effect from the next
+  model. It is remembered, and changes are logged (`thumbs.speed`). Scanning and the viewer always run at full speed.
 - Drop folders on the window to add them.
 
 The grid is a virtualised list of rows, so it stays fast with very large libraries. Thumbnails are decoded on

@@ -109,6 +109,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             _descending = _db.GetSetting("ui.descending") == "1";
             _includeSubfolders = _db.GetSetting("ui.subfolders", "1") == "1";
             _showMissing = _db.GetSetting("ui.missing") == "1";
+            _queue.Speed = WorkLimits.Parse(_db.GetSetting(ThumbnailSpeedSetting));
             if (double.TryParse(_db.GetSetting("ui.tileSize"), NumberStyles.Float, CultureInfo.InvariantCulture, out double size))
                 _tileSize = Math.Clamp(size, MinTileSize, MaxTileSize);
         }
@@ -667,6 +668,42 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
 
     public IReadOnlyList<RootInfo> Roots => _db.GetRoots();
 
+    public const string ThumbnailSpeedSetting = "thumbs.speed";
+
+    /// <summary>How hard the thumbnail queue works (Preferences → Thumbnail speed). Takes effect from the next model.</summary>
+    public ThumbnailSpeed ThumbnailSpeed
+    {
+        get => _queue.Speed;
+        set
+        {
+            if (_queue.Speed == value) return;
+            _queue.Speed = value;
+            _db.SetSetting(ThumbnailSpeedSetting, value.ToString().ToLowerInvariant());
+            _log.Info("setting.changed", ("name", "thumbnail_speed"), ("value", value.ToString().ToLowerInvariant()));
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SpeedFull));
+            OnPropertyChanged(nameof(SpeedBalanced));
+            OnPropertyChanged(nameof(SpeedBackground));
+            UpdateThumbnailStatus();
+        }
+    }
+
+    // One per menu item, so the menu shows a tick by the current speed (unticking one does nothing).
+    public bool SpeedFull { get => ThumbnailSpeed == ThumbnailSpeed.Full; set => ChooseSpeed(ThumbnailSpeed.Full, value); }
+    public bool SpeedBalanced { get => ThumbnailSpeed == ThumbnailSpeed.Balanced; set => ChooseSpeed(ThumbnailSpeed.Balanced, value); }
+    public bool SpeedBackground { get => ThumbnailSpeed == ThumbnailSpeed.Background; set => ChooseSpeed(ThumbnailSpeed.Background, value); }
+
+    private void ChooseSpeed(ThumbnailSpeed speed, bool chosen)
+    {
+        if (chosen) ThumbnailSpeed = speed;
+        else OnPropertyChanged(speed switch
+        {
+            ThumbnailSpeed.Balanced => nameof(SpeedBalanced),
+            ThumbnailSpeed.Background => nameof(SpeedBackground),
+            _ => nameof(SpeedFull),
+        });   // keep the tick
+    }
+
     public bool SearchInsideArchives
     {
         get => _db.GetSetting("scanZips", "1") == "1";
@@ -926,12 +963,19 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         {
             { Blocked: { } blocked } => $"Thumbnails stopped: {blocked} Resume to try again.",
             { Paused: true } => $"Thumbnails paused · {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
-            { Running: true } => $"Drawing thumbnails · {s.Counts.Ok:N0} of {all:N0}{failed}" + (s.Current is { } c ? $" · {c}" : ""),
+            { Running: true } => $"Drawing thumbnails{SpeedNote} · {s.Counts.Ok:N0} of {all:N0}{failed}" + (s.Current is { } c ? $" · {c}" : ""),
             _ when s.Counts.Pending > 0 => $"Thumbnails: {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
             _ when all > 0 => $"Thumbnails: all {s.Counts.Ok:N0} drawn{failed}",
             _ => "",
         };
     }
+
+    private string SpeedNote => _queue.Speed switch
+    {
+        ThumbnailSpeed.Balanced => " (balanced)",
+        ThumbnailSpeed.Background => " (in the background)",
+        _ => "",
+    };
 
     public async ValueTask DisposeAsync()
     {

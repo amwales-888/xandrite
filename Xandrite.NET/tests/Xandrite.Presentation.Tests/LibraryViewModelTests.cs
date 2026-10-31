@@ -318,6 +318,34 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task TheThumbnailSpeedIsSavedAndUsedTheNextTime()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        Assert.True(f.Vm.SpeedFull);
+        Assert.Equal(ThumbnailSpeed.Full, f.Queue.Speed);
+
+        var changed = new List<string?>();
+        f.Vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        f.Vm.SpeedBackground = true;
+        Assert.Equal(ThumbnailSpeed.Background, f.Queue.Speed);
+        Assert.True(f.Vm.SpeedBackground);
+        Assert.False(f.Vm.SpeedFull);
+        Assert.Contains(nameof(LibraryViewModel.SpeedFull), changed);   // the old tick goes
+        Assert.Equal("background", f.Db.GetSetting(LibraryViewModel.ThumbnailSpeedSetting));
+
+        f.Vm.SpeedBackground = false;   // clicking the ticked item again keeps it
+        Assert.Equal(ThumbnailSpeed.Background, f.Queue.Speed);
+
+        // Next start: the queue begins at the saved speed.
+        await using var queue = new ThumbnailQueue(f.Db, f.Location, () => new FakeRenderer(), workers: 1);
+        await using var again = new LibraryViewModel(f.Db, f.Location, queue, f.Shell, new ImmediateDispatcher());
+        again.Initialize();
+        Assert.Equal(ThumbnailSpeed.Background, queue.Speed);
+        Assert.True(again.SpeedBackground);
+    }
+
+    [Fact]
     public async Task ShowLogFileOpensTheLogWithWhatHasHappenedSoFar()
     {
         await using var f = new Fixture(files: 2);
