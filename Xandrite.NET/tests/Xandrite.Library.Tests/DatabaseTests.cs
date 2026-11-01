@@ -224,6 +224,13 @@ public class DatabaseTests
         Assert.Equal(3, db.List(new ListQuery { Rating = RatingFilter.Unrated }).Total);
         Assert.Equal(1, db.List(new ListQuery { Rating = RatingFilter.AtLeast3 }).Total);
         Assert.Equal(1, db.List(new ListQuery { Rating = RatingFilter.AtLeast2, SizeMin = 150 }).Total);
+
+        db.SetView(new string('0', 64), new SavedView([1, 2, 3], [0, 0, 0], 35, true));
+        var custom = db.List(new ListQuery { View = ViewFilter.Custom });
+        Assert.Equal(1, custom.Total);
+        Assert.True(Assert.Single(custom.Rows).CustomView);
+        Assert.Equal(4, db.List(new ListQuery { View = ViewFilter.Default }).Total);
+        Assert.Equal(0, db.List(new ListQuery { View = ViewFilter.Custom, Rating = RatingFilter.Unrated }).Total);   // combines
     }
 
     [Fact]

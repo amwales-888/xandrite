@@ -335,6 +335,11 @@
                             <ListBox ItemsSource="{Binding RatingOptions}" SelectedItem="{Binding RatingFilter}" Style="{StaticResource ChoiceList}"
                                      AutomationProperties.Name="Rating" />
 
+                            <TextBlock Text="VIEWS" Style="{StaticResource SectionLabel}" Margin="0,14,0,8"
+                                       ToolTip="Custom: thumbnails drawn from a view you saved in the viewer. Default: the automatic view." />
+                            <ListBox ItemsSource="{Binding ViewOptions}" SelectedItem="{Binding ViewFilter}" Style="{StaticResource ChoiceList}"
+                                     AutomationProperties.Name="Views" />
+
                             <TextBlock Text="DATE" Style="{StaticResource SectionLabel}" Margin="0,14,0,8" />
                             <DockPanel>
                                 <Border DockPanel.Dock="Left" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Margin="0,0,8,0">
