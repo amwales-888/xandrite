@@ -98,13 +98,14 @@ is started with `--developer`:
 dotnet run --project src/Xandrite -- --developer           (from a build)
 ```
 
-**Preferences (the gear) → Developer** then has four switches, all off at first. They are remembered, but only put
+**Preferences (the gear) → Developer** then has five switches, all off at first. They are remembered, but only put
 in force when the app is started with `--developer` again, so they never run unnoticed. Everything goes to the normal
 log file; `developer.options` at start-up records which are on.
 
 | Switch | What it logs |
 |---|---|
 | **Log archives opened and closed** | `archive.open path=… kind=zip\|7z\|rar parts=…` and `archive.close … ms=…`: one pair per archive, a split `.7z.001…` or multi-volume `.part1.rar…` set counting as one (`parts=` says how many files). |
+| **Log archive reads, seeks and writes** | Very detailed. Every call on an archive's files: `archive.read path=… at=… asked=… got=… us=…` (where in the file, bytes asked for and received, microseconds) and `archive.seek path=… from=… to=… origin=begin\|current\|end offset=…`, on each part of a split set and each RAR volume. For 7-Zip, each item it goes through: `archive.item … index=… entry=… wanted=true\|false` (an unwanted item in a solid block is still decompressed), `archive.write … index=… bytes=… total=…` for each piece of decompressed content handed over, and `archive.item.end … result=… bytes=… ms=…`. For zip, `archive.entry path=… entry=… bytes=… reads=… ms=…` for each entry read. |
 | **Log files opened and closed** | `file.open path=… access=read\|write purpose=… open_ms=…` and `file.close … read=… written=… open_ms=…` (bytes moved while it was open, and how long), `file.open_failed … message=…`. `purpose` says why: `hash`, `zip`, `archive`, `archive part`, `rar volume`, `model`, `thumbnail`, `tile image`, `viewer`, `export`, `download`, `import`. The log file itself is not included. |
 | **Log threads started and ended** | `work.start name=… tid=… pool=true` and `work.end name=… ms=… tid=… start_tid=…` for each piece of background work, plus `pool.thread.start` / `pool.thread.stop` / `pool.thread.retire os_tid=… active=…` as .NET's thread pool adds and retires the threads that run it. |
 | **Thread id on every log line** | `tid=…` at the end of every line: the managed id of the thread that wrote it. |

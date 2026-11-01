@@ -15,7 +15,7 @@ namespace Xandrite.Library.Logging;
 public static class DevLog
 {
     private static ILog _log = NullLog.Instance;
-    private static volatile bool _archives, _files, _threads;
+    private static volatile bool _archives, _files, _threads, _archiveIo;
     private static PoolThreadListener? _pool;
     private static readonly object Gate = new();
 
@@ -30,6 +30,16 @@ public static class DevLog
     {
         get => _archives;
         set => _archives = value;
+    }
+
+    /// <summary>
+    /// archive.read / archive.seek for every call on an archive's files (each part and volume); archive.item /
+    /// archive.write / archive.item.end for each item 7-Zip goes through; archive.entry for each zip entry read.
+    /// </summary>
+    public static bool ArchiveIo
+    {
+        get => _archiveIo;
+        set => _archiveIo = value;
     }
 
     /// <summary>file.open / file.close: every file the library reads or writes (the log file itself excepted).</summary>
@@ -69,6 +79,157 @@ public static class DevLog
         if (!_archives) return Nothing.Instance;
         _log.Info("archive.open", ("path", path), ("kind", kind), ("parts", parts), ("tid", Tid));
         return new Closer(started => _log.Info("archive.close", ("path", path), ("kind", kind), ("ms", Ms(started)), ("tid", Tid)));
+    }
+
+    /// <summary>An archive file (or one part or volume of one), with every read and seek on it logged when ArchiveIo is on.</summary>
+    public static Stream ArchiveIoStream(Stream stream, string path) => _archiveIo ? new ArchiveIoLogStream(stream, path) : stream;
+
+    /// <summary>A zip entry's content, logged as one archive.entry line (bytes, reads, time) when it is closed.</summary>
+    public static Stream ArchiveEntryStream(Stream stream, string archivePath, string entry) =>
+        _archiveIo ? new ArchiveEntryLogStream(stream, archivePath, entry) : stream;
+
+    /// <summary>7-Zip starting an item: wanted (its content comes to us) or not (passed over, though in a solid
+    /// block still decompressed).</summary>
+    public static void ArchiveItem(string archivePath, uint index, string? name, bool wanted) =>
+        _log.Info("archive.item", ("path", archivePath), ("index", index), ("entry", name), ("wanted", wanted), ("tid", Tid));
+
+    /// <summary>7-Zip handing us a piece of an item's decompressed content.</summary>
+    public static void ArchiveWrite(string archivePath, uint index, uint bytes, long total) =>
+        _log.Info("archive.write", ("path", archivePath), ("index", index), ("bytes", bytes), ("total", total), ("tid", Tid));
+
+    /// <summary>7-Zip finishing an item: its result code, the bytes it wrote and how long it took.</summary>
+    public static void ArchiveItemEnd(string archivePath, uint index, string? name, int result, long bytes, long ms) =>
+        _log.Info("archive.item.end", ("path", archivePath), ("index", index), ("entry", name), ("result", result), ("bytes", bytes),
+            ("ms", ms), ("tid", Tid));
+
+    /// <summary>Logs each read (where, how much asked for, how much came, how long) and each seek.</summary>
+    private sealed class ArchiveIoLogStream(Stream inner, string path) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+
+        public override long Position
+        {
+            get => inner.Position;
+            set => Seek(value, SeekOrigin.Begin);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            long at = inner.Position, started = Stopwatch.GetTimestamp();
+            int n = inner.Read(buffer);
+            Logged(at, buffer.Length, n, started);
+            return n;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            long at = inner.Position, started = Stopwatch.GetTimestamp();
+            int n = await inner.ReadAsync(buffer, cancellationToken);
+            Logged(at, buffer.Length, n, started);
+            return n;
+        }
+
+        private void Logged(long at, int asked, int got, long started) =>
+            _log.Info("archive.read", ("path", path), ("at", at), ("asked", asked), ("got", got),
+                ("us", (long)Stopwatch.GetElapsedTime(started).TotalMicroseconds), ("tid", Tid));
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            long from = inner.Position;
+            long to = inner.Seek(offset, origin);
+            _log.Info("archive.seek", ("path", path), ("from", from), ("to", to), ("origin", origin.ToString().ToLowerInvariant()),
+                ("offset", offset), ("tid", Tid));
+            return to;
+        }
+
+        public override void Flush() { }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync();
+            await base.DisposeAsync();
+        }
+    }
+
+    /// <summary>Counts what is read from one zip entry and logs it when closed.</summary>
+    private sealed class ArchiveEntryLogStream(Stream inner, string archivePath, string entry) : Stream
+    {
+        private readonly long _started = Stopwatch.GetTimestamp();
+        private long _bytes, _reads;
+        private int _closed;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+
+        public override long Position
+        {
+            get => inner.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            int n = inner.Read(buffer);
+            _bytes += n;
+            _reads++;
+            return n;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            int n = await inner.ReadAsync(buffer, cancellationToken);
+            _bytes += n;
+            _reads++;
+            return n;
+        }
+
+        private void Closed()
+        {
+            if (Interlocked.Exchange(ref _closed, 1) != 0) return;
+            _log.Info("archive.entry", ("path", archivePath), ("entry", entry), ("bytes", _bytes), ("reads", _reads),
+                ("ms", Ms(_started)), ("tid", Tid));
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void Flush() { }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { inner.Dispose(); Closed(); }
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync();
+            Closed();
+            await base.DisposeAsync();
+        }
     }
 
     /* ---------- files ---------- */

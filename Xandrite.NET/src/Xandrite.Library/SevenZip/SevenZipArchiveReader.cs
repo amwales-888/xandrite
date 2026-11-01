@@ -45,6 +45,8 @@ public sealed class SevenZipArchiveReader : IArchiveReader
         private IDisposable _logged = NullDisposable;
         private static readonly IDisposable NullDisposable = new MemoryStream(0);
 
+        private string _path = "";
+
         private OpenArchive(nint archive, InStream stream, OpenCallback callback)
         {
             _archive = archive;
@@ -73,7 +75,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             }
             else
             {
-                stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 16, purpose: "archive"), path);
+                stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(path, 1 << 16, purpose: "archive"), path), path);
             }
 
             byte format;
@@ -113,7 +115,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 throw new InvalidDataException("not a valid archive, or damaged");
             }
             // RAR volumes (name.part2.rar...) are opened by 7-Zip through the callback, which logs each one.
-            return new OpenArchive(archive, input, callback) { _logged = DevLog.Archive(path, format == Format7z ? "7z" : "rar", partCount + callback.VolumeCount) };
+            return new OpenArchive(archive, input, callback) { _path = path, _logged = DevLog.Archive(path, format == Format7z ? "7z" : "rar", partCount + callback.VolumeCount) };
         }
 
         private static byte DetectFormat(Stream stream)
@@ -211,7 +213,11 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             if (indices.Count == 0) return;
             var sorted = indices.Distinct().Order().ToArray();
             var wanted = sorted.ToHashSet();
-            using var callback = new ExtractCallback(wanted.Contains, completed, maxBytes, cancellation);
+            using var callback = new ExtractCallback(wanted.Contains, completed, maxBytes, cancellation)
+            {
+                ArchivePath = _path,
+                NameOf = index => String(index, kpidPath)?.Replace('\\', '/'),
+            };
             int hr;
             fixed (uint* list = sorted)
                 hr = SevenZipNative.Extract(_archive, list, (uint)sorted.Length, 0, callback.Pointer(IID_IArchiveExtractCallback));
