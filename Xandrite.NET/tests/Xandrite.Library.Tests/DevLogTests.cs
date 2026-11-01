@@ -9,6 +9,7 @@ namespace Xandrite.Library.Tests;
 /// Developer logging (Preferences → Developer, with --developer): archives and files opened and closed, work started
 /// and ended, thread ids. DevLog is shared, so each test sets it up and puts it back.
 /// </summary>
+[Collection(ArchiveReadSize.Name)]
 public class DevLogTests
 {
     private const string Stl = "solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";

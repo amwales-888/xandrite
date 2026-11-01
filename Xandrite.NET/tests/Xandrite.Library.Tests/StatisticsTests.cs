@@ -7,7 +7,18 @@ using Xandrite.Rendering;
 
 namespace Xandrite.Library.Tests;
 
+/// <summary>
+/// Tests that change <see cref="ArchiveFiles.ReadBufferBytes"/> (shared by the whole app) or check what it records run
+/// one after another, never alongside each other.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class ArchiveReadSize
+{
+    public const string Name = "Archive read size";
+}
+
 /// <summary>The statistics file: a line per scan and per thumbnail run, for comparing runs over time.</summary>
+[Collection(ArchiveReadSize.Name)]
 public class StatisticsTests
 {
     private const string Stl = "solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
