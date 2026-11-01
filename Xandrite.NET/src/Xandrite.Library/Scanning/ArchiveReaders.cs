@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
@@ -115,7 +116,7 @@ public sealed class ZipArchiveReader : IArchiveReader
     public async Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        await using var stream = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, FileOptions.Asynchronous);
+        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous), archivePath);
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
         if (zip.Entries.Count > limits.MaxEntries)
             throw new InvalidDataException($"the zip has too many entries (limit {limits.MaxEntries:N0})");
@@ -145,10 +146,10 @@ public sealed class ZipArchiveReader : IArchiveReader
 
     public async Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation)
     {
-        FileStream stream;
+        Stream stream;
         try
         {
-            stream = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, FileOptions.Asynchronous);
+            stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous), archivePath);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -173,8 +174,7 @@ public static class Hashing
 {
     public static async Task<string> HashFileAsync(string path, CancellationToken cancellation)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
-            1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan), path);
         return await HashStreamAsync(stream, cancellation);
     }
 
@@ -202,7 +202,11 @@ public sealed class ModelSource(IReadOnlyList<IArchiveReader> readers)
         }
         try
         {
-            return await File.ReadAllBytesAsync(location.Path, cancellation);
+            if (IoMeter.Current is null) return await File.ReadAllBytesAsync(location.Path, cancellation);
+            await using var stream = IoMeter.Wrap(IoMeter.OpenFile(location.Path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan), location.Path);
+            var bytes = new byte[stream.Length];
+            await stream.ReadExactlyAsync(bytes, cancellation);
+            return bytes;
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {

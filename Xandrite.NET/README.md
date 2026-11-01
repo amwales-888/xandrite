@@ -75,7 +75,8 @@ app, scans (every file hashed, every archive read, every problem, the totals), t
 draw times, failures with the reason, skips), the viewer (views saved and reverted, ratings), folders added and
 removed, downloads, and any crash. Warnings mark scans and runs that had problems. The file rolls over at 10 MB,
 keeping five older files (`xandrite.log.1` … `.5`), so it cannot fill a disk. If it cannot be written, the app carries
-on without it. Open it from **Preferences ▾ → Show log file**.
+on without it. Open it from **Preferences ▾ → Show log file**. Scans and thumbnail runs also log where their time goes (`scan.progress`, `scan.metrics`,
+`thumbs.progress`, per-archive timings); [docs/performance-logging.md](docs/performance-logging.md) explains every field.
 
 **The first start** copies the Electron app's library across, if there is one (`%APPDATA%\xandrite`). The
 database is copied before the window opens; the thumbnail images follow in the background (see the status bar).

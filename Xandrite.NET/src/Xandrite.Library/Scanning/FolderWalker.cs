@@ -1,3 +1,5 @@
+using Xandrite.Library.Logging;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -128,7 +130,25 @@ public static partial class FolderWalker
 
     private static bool IsModel(string name) => ModelExtensions.Contains(System.IO.Path.GetExtension(name));
 
-    public static IEnumerable<WalkItem> Walk(string root, bool includeArchives, CancellationToken cancellation = default)
+    /// <summary>What walking costs: listing folders, and looking up files the listing has already described.</summary>
+    public sealed class Meters
+    {
+        /// <summary>Folder listings: one call per folder, with the time spent waiting for each.</summary>
+        public Meter List { get; } = new();
+
+        /// <summary>Extra lookups of a file's size and date (each a round trip on a network share).</summary>
+        public Meter Stat { get; } = new();
+
+        /// <summary>The number of files and folders the listings returned.</summary>
+        public long Entries;
+
+        /// <summary>Called for a folder that took longer than <see cref="SlowList"/> to list: (folder, ms, entries).</summary>
+        public Action<string, long, int>? OnSlowList { get; init; }
+
+        public TimeSpan SlowList { get; init; } = TimeSpan.FromSeconds(2);
+    }
+
+    public static IEnumerable<WalkItem> Walk(string root, bool includeArchives, CancellationToken cancellation = default, Meters? meters = null)
     {
         var queue = new List<string> { root };
         for (int i = 0; i < queue.Count; i++)
@@ -138,6 +158,7 @@ public static partial class FolderWalker
 
             List<FileSystemInfo> entries;
             string? failure = null;
+            long listed = Stopwatch.GetTimestamp();
             try
             {
                 entries = new DirectoryInfo(dir).EnumerateFileSystemInfos("*", new EnumerationOptions
@@ -148,6 +169,14 @@ public static partial class FolderWalker
                     ReturnSpecialDirectories = false,
                 }).ToList();
                 entries.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture));
+                if (meters is not null)
+                {
+                    long took = Stopwatch.GetTimestamp() - listed;
+                    meters.List.Add(took);
+                    Interlocked.Add(ref meters.Entries, entries.Count);
+                    if (took > meters.SlowList.TotalSeconds * Stopwatch.Frequency)
+                        meters.OnSlowList?.Invoke(dir, (long)(took * 1000.0 / Stopwatch.Frequency), entries.Count);
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
@@ -189,20 +218,24 @@ public static partial class FolderWalker
                 {
                     if (model)
                     {
+                        long stat = Stopwatch.GetTimestamp();
                         file.Refresh();
                         item = new WalkItem { Path = file.FullName, Size = file.Length, MtimeMs = FileTimes.ToNodeMs(file.LastWriteTimeUtc) };
+                        meters?.Stat.Add(Stopwatch.GetTimestamp() - stat);
                     }
                     else
                     {
                         var (parts, problem) = ArchiveParts(file.Name, fileNames);
                         long size = 0;
                         double mtime = double.MinValue;
+                        long stat = Stopwatch.GetTimestamp();
                         foreach (var part in parts)
                         {
                             var info = new FileInfo(System.IO.Path.Combine(dir, part));
                             size += info.Length;                                       // a changed or replaced part changes these,
                             mtime = Math.Max(mtime, FileTimes.ToNodeMs(info.LastWriteTimeUtc));   // so the archive is looked at again
                         }
+                        meters?.Stat.Add(Stopwatch.GetTimestamp() - stat, calls: parts.Count);
                         item = new WalkItem { Path = file.FullName, Size = size, MtimeMs = mtime, IsArchive = true, Incomplete = problem, Parts = parts.Count };
                     }
                 }
