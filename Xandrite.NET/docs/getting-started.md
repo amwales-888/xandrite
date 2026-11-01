@@ -197,6 +197,8 @@ While any filters are on, the Filters button turns blue and shows how many, and 
 toolbar ("★★★ and up", "Modified in the last 30 days"), with how many files match. Click a chip to turn that filter
 off, or **Clear all** to turn them all off. With no filters on, the chips go away and the grid gets the space.
 
+![The Filters panel open, with two filters on and their chips under the toolbar](images/12-filters.png)
+
 ### Tile size
 
 The slider in the toolbar, between a small and a large picture, makes the thumbnails bigger or smaller.
@@ -224,6 +226,8 @@ the archive it's in, and why its thumbnail failed, if it did.
 While models are selected, a blue **selection bar** appears under the toolbar. It shows how many are selected and
 offers **Download…**, **Rate** and **Copy paths** for all of them, plus **Select all** and **Clear selection**.
 
+![Three models selected, with the selection bar's Rate menu open](images/13-selection-bar.png)
+
 ### Rating
 
 Give models one to five stars, to find your favourites later (sort or filter by **Rating**):
@@ -237,6 +241,8 @@ Give models one to five stars, to find your favourites later (sort or filter by 
 ## 8. Right-click actions
 
 Right-click a tile, or a selection of tiles, for these actions:
+
+![The right-click menu](images/06-context-menu.png)
 
 - **Open:** opens the model in the viewer. Double-clicking or pressing **Enter** does the same.
 - **Show in folder:** opens File Explorer with the file selected. For a model inside an archive, it selects the archive.
@@ -302,6 +308,8 @@ you left it.
 ## 10. Preferences
 
 The **Preferences** menu, under the gear at the top right of the library window:
+
+![The Preferences menu, with Thumbnail speed open](images/10-preferences.png)
 
 | Item | What it does |
 |---|---|
