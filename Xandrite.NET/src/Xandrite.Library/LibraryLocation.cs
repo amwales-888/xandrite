@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 namespace Xandrite.Library;
 
 /// <summary>
@@ -106,8 +107,8 @@ public static class ElectronImport
                     try
                     {
                         string temp = destination + ".importing";
-                        await using (var from = new FileStream(files[i], FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, useAsync: true))
-                        await using (var to = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+                        await using (var from = DevLog.OpenRead(files[i], 1 << 16, FileOptions.Asynchronous, "import"))
+                        await using (var to = DevLog.Open(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous, "import"))
                             await from.CopyToAsync(to, cancellation);
                         File.Move(temp, destination, overwrite: false);   // a newer image drawn meanwhile wins
                         copied++;

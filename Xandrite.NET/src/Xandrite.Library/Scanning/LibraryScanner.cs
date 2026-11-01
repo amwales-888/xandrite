@@ -54,7 +54,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
     public ILog Log { get; init; } = NullLog.Instance;
 
     public Task<ScanSummary> ScanAsync(string root, bool includeArchives = true, Action<ScanProgress>? onProgress = null, CancellationToken cancellation = default) =>
-        Task.Run(() => ScanCoreAsync(root, includeArchives, onProgress, cancellation), CancellationToken.None);
+        DevLog.Run("scan", () => ScanCoreAsync(root, includeArchives, onProgress, cancellation));
 
     private sealed class Counts
     {
@@ -139,7 +139,8 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         // same millisecond cannot be confused (which would spoil the "new" and "missing" counts).
         long scanId = Math.Max(db.Now(), db.Locked(c => c.Scalar("SELECT COALESCE(MAX(last_seen_scan), 0) FROM locations")) + 1);
         var counts = new Counts();
-        Log.Info("scan.start", ("root", root), ("archives", includeArchives), ("concurrency", Concurrency));
+        Log.Info("scan.start", ("root", root), ("archives", includeArchives), ("concurrency", Concurrency),
+            ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
 
         void Report(string? current)
         {
@@ -189,6 +190,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
 
         async Task HashAndStore(WalkItem item)
         {
+            using var work = DevLog.Work("scan.hash");
             long jobStarted = Stopwatch.GetTimestamp();
             var io = new IoMeter { OnStall = Stall, Parent = metrics.Live };
             IoMeter.Current = io;
@@ -226,6 +228,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         // already tells whether the content changed.)
         async Task ScanArchive(WalkItem item, IArchiveReader reader)
         {
+            using var work = DevLog.Work("scan.archive");
             bool clean = true;
             long archiveStarted = Stopwatch.GetTimestamp();
             int models = 0, reused = 0;   // this archive's own counts (several archives are read at once, so not the shared totals)
@@ -327,7 +330,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
 
         // Every 30 seconds: how far it has got and how fast it is going now.
         using var stopProgress = new CancellationTokenSource();
-        var progress = Task.Run(async () =>
+        var progress = DevLog.Run("scan.progress", async () =>
         {
             using var timer = new PeriodicTimer(ProgressEvery);
             long lastRead = 0, lastModels = 0;

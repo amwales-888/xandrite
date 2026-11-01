@@ -87,3 +87,47 @@ largest of them is where the run's time went. Slow single reads are logged as `t
 - **CPU-bound:** `other_ms` (decompressing) or `models_ms` larger than `read_ms`, and `parallel` near 4. More workers
   would help; this is something Xandrite can change.
 - **Database-bound:** `db_ms` close to `wall_ms`.
+
+## Developer logging
+
+For tracking down problems with files, archives or threads, Xandrite has extra logging that is only offered when it
+is started with `--developer`:
+
+```
+"%LOCALAPPDATA%\Xandrite.NET\Xandrite.exe" --developer
+dotnet run --project src/Xandrite -- --developer           (from a build)
+```
+
+**Preferences (the gear) → Developer** then has five switches, all off at first. They are remembered, but only put
+in force when the app is started with `--developer` again, so they never run unnoticed. Everything goes to the normal
+log file; `developer.options` at start-up records which are on.
+
+| Switch | What it logs |
+|---|---|
+| **Log archives opened and closed** | `archive.open path=… kind=zip\|7z\|rar parts=…` and `archive.close … ms=…`: one pair per archive, a split `.7z.001…` or multi-volume `.part1.rar…` set counting as one (`parts=` says how many files). |
+| **Log archive reads, seeks and writes** | Very detailed. Every call on an archive's files: `archive.read path=… at=… asked=… got=… us=…` (where in the file, bytes asked for and received, microseconds) and `archive.seek path=… from=… to=… origin=begin\|current\|end offset=…`, on each part of a split set and each RAR volume. For 7-Zip, each item it goes through: `archive.item … index=… entry=… wanted=true\|false` (an unwanted item in a solid block is still decompressed), `archive.write … index=… bytes=… total=…` for each piece of decompressed content handed over, and `archive.item.end … result=… bytes=… ms=…`. For zip, `archive.entry path=… entry=… bytes=… reads=… ms=…` for each entry read. |
+| **Log files opened and closed** | `file.open path=… access=read\|write purpose=… open_ms=…` and `file.close … read=… written=… open_ms=…` (bytes moved while it was open, and how long), `file.open_failed … message=…`. `purpose` says why: `hash`, `zip`, `archive`, `archive part`, `rar volume`, `model`, `thumbnail`, `tile image`, `viewer`, `export`, `download`, `import`. The log file itself is not included. |
+| **Log threads started and ended** | `work.start name=… tid=… pool=true` and `work.end name=… ms=… tid=… start_tid=…` for each piece of background work, plus `pool.thread.start` / `pool.thread.stop` / `pool.thread.retire os_tid=… active=…` as .NET's thread pool adds and retires the threads that run it. |
+| **Thread id on every log line** | `tid=…` at the end of every line: the managed id of the thread that wrote it. |
+
+Work runs on the .NET thread pool, and asynchronous work can move to another pool thread at each `await`, so a
+`work.end` can have a different `tid` from its `work.start` (`start_tid` gives the first). The named work is:
+`scan`, `scan.progress`, `scan.hash`, `scan.archive`, `thumbs.run`, `thumbs.worker.N`, `thumbs.archive_read`,
+`7z.scan`, `7z.read`, `7z.read_many`, `viewer.load`, `viewer.frame`, `viewer.thumbnail`, `viewer.save_view`,
+`tile.decode` and `import.thumbnails`.
+
+These logs grow quickly (one line or two per file and per thumbnail); the log keeps about 60 MB, so turn them off
+again when you are done.
+
+### Archive read size
+
+Archive files are read from the disk or share in pieces of **1 MB** by default. Each decompressor asks for much less
+at a time (the zip reader asks for 8 KB, 7-Zip for up to 256 KB, RAR for small headers), and those requests are met
+from the 1 MB piece already read, so a share sees a few large reads rather than many small round trips.
+
+**Preferences (the gear) → Developer → Archive read size** offers 64 KB, 256 KB, 1 MB and 4 MB. Unlike the logging
+switches, the chosen size applies whether or not the app was started with `--developer`; the menu is only shown
+there to keep it out of the way. `scan.start` and `thumbs.start` record it as `archive_read_kb=…`, and with
+**Log archive reads, seeks and writes** on, each `archive.read … asked=` line shows a read of that size (smaller only
+at the end of a file). Compare `archive_read_calls` and `read_mb_s` in `scan.metrics` between runs to see what a
+size does on your network.
