@@ -49,6 +49,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private AgeFilterOption _ageFilter = FilterOptions.Ages[0];
     private AgeBasisOption _ageBasis = FilterOptions.AgeBases[0];
     private RatingFilterOption _ratingFilter = FilterOptions.Ratings[0];
+    private ViewFilterOption _viewFilter = FilterOptions.Views[0];
     private double _tileSize = 180;
 
     private long _total;
@@ -168,6 +169,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<AgeFilterOption> AgeOptions => FilterOptions.Ages;
     public IReadOnlyList<AgeBasisOption> AgeBasisOptions => FilterOptions.AgeBases;
     public IReadOnlyList<RatingFilterOption> RatingOptions => FilterOptions.Ratings;
+    public IReadOnlyList<ViewFilterOption> ViewOptions => FilterOptions.Views;
 
     public string SearchText
     {
@@ -278,8 +280,16 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         set { if (value is not null && Set(ref _ratingFilter, value)) FiltersChanged(); }
     }
 
+    /// <summary>Thumbnails drawn from a view saved in the viewer (Custom), or the automatic one (Default).</summary>
+    public ViewFilterOption ViewFilter
+    {
+        get => _viewFilter;
+        set { if (value is not null && Set(ref _viewFilter, value)) FiltersChanged(); }
+    }
+
     public bool FiltersActive => _sizeFilter.Min is not null || _sizeFilter.Max is not null
-        || _ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null || _ratingFilter.Value != Library.RatingFilter.Any;
+        || _ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null || _ratingFilter.Value != Library.RatingFilter.Any
+        || _viewFilter.Value != Library.ViewFilter.Any;
 
     private void FiltersChanged()
     {
@@ -298,6 +308,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 chips.Add(Chip(_ratingFilter.Label, "rating", () => RatingFilter = FilterOptions.Ratings[0]));
             if (_ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null)
                 chips.Add(Chip(DateChipLabel(_ageBasis, _ageFilter), "date", () => AgeFilter = FilterOptions.Ages[0]));
+            if (_viewFilter.Value != Library.ViewFilter.Any)
+                chips.Add(Chip(_viewFilter.Value == Library.ViewFilter.Custom ? "Custom views" : "Default views", "view",
+                    () => ViewFilter = FilterOptions.Views[0]));
             if (_sizeFilter.Min is not null || _sizeFilter.Max is not null)
                 chips.Add(Chip("Size " + _sizeFilter.Label.ToLowerInvariant(), "size", () => SizeFilter = FilterOptions.Sizes[0]));
             if (_showMissing)
@@ -354,6 +367,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _sizeFilter = FilterOptions.Sizes[0];
         _ageFilter = FilterOptions.Ages[0];
         _ratingFilter = FilterOptions.Ratings[0];
+        _viewFilter = FilterOptions.Views[0];
+        OnPropertyChanged(nameof(ViewFilter));
         OnPropertyChanged(nameof(SizeFilter));
         OnPropertyChanged(nameof(AgeFilter));
         OnPropertyChanged(nameof(RatingFilter));
@@ -509,6 +524,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         Before = _ageFilter.OlderThan is { } older ? (now - older).ToUnixTimeMilliseconds() : null,
         AgeBasis = _ageBasis.Value,
         Rating = _ratingFilter.Value,
+        View = _viewFilter.Value,
     };
 
     private static bool NaturallyAscending(SortOrder sort) => sort is SortOrder.Name or SortOrder.Path;
@@ -669,6 +685,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         UpdateRows(sha, row => row with { ThumbnailState = ThumbnailState.Ok, ThumbnailError = null, CustomView = true });
         if (_bySha.TryGetValue(sha, out var tiles)) foreach (var tile in tiles) tile.ImageVersion++;
         UpdateThumbnailStatus();
+        ViewsChanged();
     }
 
     /// <summary>The viewer went back to the automatic view: the thumbnail is being drawn again.</summary>
@@ -676,6 +693,13 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     {
         UpdateRows(sha, row => row with { ThumbnailState = ThumbnailState.Pending, CustomView = false });
         UpdateThumbnailStatus();
+        ViewsChanged();
+    }
+
+    /// <summary>A model's view was saved or dropped: with the view filter on, it may now belong in the list or not.</summary>
+    private void ViewsChanged()
+    {
+        if (_viewFilter.Value != Library.ViewFilter.Any) Reload();
     }
 
     public void ApplyRating(string sha, int? stars) => UpdateRows(sha, row => row with { Rating = stars });
@@ -765,6 +789,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _log.Info(revert ? "views.revert" : "thumbs.regenerate", ("models", tiles.Select(t => t.Row.Sha256).Distinct().Count()));
         _queue.Start();
         UpdateThumbnailStatus();
+        if (revert) ViewsChanged();
     }
 
     public async Task DownloadAsync(IReadOnlyList<TileViewModel> tiles)

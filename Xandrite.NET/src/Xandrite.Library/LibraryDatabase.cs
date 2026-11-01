@@ -292,6 +292,8 @@ public sealed class LibraryDatabase : IDisposable
         if (query.Since is { } since && double.IsFinite(since)) { where.Add($"{dateColumn} >= ?"); args.Add(since); }
         if (query.Before is { } before && double.IsFinite(before)) { where.Add($"{dateColumn} < ?"); args.Add(before); }
         if (RatingSql(query.Rating) is { } rating) where.Add(rating);
+        if (query.View == ViewFilter.Custom) where.Add("EXISTS (SELECT 1 FROM views cv WHERE cv.sha256 = l.sha256)");
+        if (query.View == ViewFilter.Default) where.Add("NOT EXISTS (SELECT 1 FROM views cv WHERE cv.sha256 = l.sha256)");
 
         string clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
         var filterArgs = args.ToArray();
