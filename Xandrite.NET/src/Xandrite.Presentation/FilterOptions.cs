@@ -13,6 +13,9 @@ public sealed record AgeBasisOption(string Label, AgeBasis Value);
 
 public sealed record RatingFilterOption(string Label, RatingFilter Value);
 
+/// <summary>A filter that is on, shown as a chip under the toolbar; its button turns that one filter off.</summary>
+public sealed record FilterChip(string Label, string RemoveLabel, RelayCommand Remove);
+
 /// <summary>The choices in the filter bar, as in the Electron app.</summary>
 public static class FilterOptions
 {

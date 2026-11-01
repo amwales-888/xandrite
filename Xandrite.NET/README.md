@@ -75,7 +75,7 @@ app, scans (every file hashed, every archive read, every problem, the totals), t
 draw times, failures with the reason, skips), the viewer (views saved and reverted, ratings), folders added and
 removed, downloads, and any crash. Warnings mark scans and runs that had problems. The file rolls over at 10 MB,
 keeping five older files (`xandrite.log.1` … `.5`), so it cannot fill a disk. If it cannot be written, the app carries
-on without it. Open it from **Preferences ▾ → Show log file**. Scans and thumbnail runs also log where their time goes (`scan.progress`, `scan.metrics`,
+on without it. Open it from **Preferences (the gear) → Show log file**. Scans and thumbnail runs also log where their time goes (`scan.progress`, `scan.metrics`,
 `thumbs.progress`, per-archive timings); [docs/performance-logging.md](docs/performance-logging.md) explains every field.
 
 **The first start** copies the Electron app's library across, if there is one (`%APPDATA%\xandrite`). The
@@ -89,8 +89,12 @@ If the app is closed during the image copy, it carries on at the next start.
 It works like the Electron app's window:
 - **Folder tree** on the left, with "All files" at the top. Right-click a folder to rescan it, show it in Explorer, or
   remove it from the library.
-- **Search** matches part of a path or of a SHA-256. **Filters** narrow by size, age (date modified or date added) and
-  rating. **Order by** has name, folder and name, date modified, date added, size and rating; the ⇅ button reverses it.
+- **Toolbar:** search (part of a path or a SHA-256), **Filters** (a panel: rating, date modified or added, file size,
+  show missing; the button shows how many are on), **Sort** (name, folder and name, date modified, date added, size,
+  rating) with an arrow that shows and reverses the direction, the thumbnail size slider, and Preferences (the gear).
+- **Under the toolbar:** while models are selected, a selection bar (Download…, Rate, Copy paths, Select all, Clear
+  selection); otherwise, while filters are on, a chip for each (click to remove) and Clear all. Nothing when neither.
+- **Subfolders** (above the folder tree) decides whether a folder shows its subfolders' models.
 - **Selecting:** click selects (click again to deselect); Ctrl-click or the round tick adds or removes one;
   Shift-click selects a range; Ctrl+A selects all; Esc clears.
 - **Keys:** the arrow keys move the selection; Enter opens the viewer; 1 to 5 rate the selection and 0 clears the rating;
@@ -99,7 +103,7 @@ It works like the Electron app's window:
   Copy path, Copy SHA-256, Rate, Find other copies of this model, Regenerate thumbnail, Revert to automatic view.
 - **Status bar:** library counts, scan progress (with Cancel), thumbnail progress (with Pause, Resume and Retry failed),
   and Rescan All.
-- **Preferences ▾:** Manage folders… (add several, then they are scanned when the window closes), Search inside
+- **Preferences (the gear):** Manage folders… (add several, then they are scanned when the window closes), Search inside
   archives, Thumbnail speed, Open data folder, Show log file, the update options and About Xandrite….
 - **Thumbnail speed:** *Full speed* (every worker, normal priority; 7-Zip decompresses on every core), *Balanced* (half
   the workers, below-normal priority, 7-Zip on a quarter of the cores) or *In the background* (one model at a time, lowest

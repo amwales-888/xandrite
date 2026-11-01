@@ -215,6 +215,15 @@ public partial class LibraryWindow : Window
         if (dialog.Added.Count > 0) _ = _vm.AddFoldersAsync(dialog.Added);
     }
 
+    /// <summary>A button whose menu opens on a normal click (Rate in the selection bar).</summary>
+    private void OnOpenButtonMenu(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { ContextMenu: { } menu } button) return;
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     private void OnDragOver(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Any(Directory.Exists)

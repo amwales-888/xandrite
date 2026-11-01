@@ -83,6 +83,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         ResumeThumbnailsCommand = new RelayCommand(_queue.Resume);
         RetryFailedCommand = new RelayCommand(RetryFailed);
         ClearFiltersCommand = new RelayCommand(ClearFilters);
+        ClearAllFiltersCommand = new RelayCommand(ClearAllFilters);
+        DownloadSelectedCommand = new RelayCommand(() => _ = DownloadAsync(SelectedTiles), () => _selectedCount > 0);
+        CopySelectedPathsCommand = new RelayCommand(() => CopyPaths(SelectedTiles), () => _selectedCount > 0);
+        RateSelectedCommand = new RelayCommand(p => Rate(p is null or "" ? null : int.Parse(p.ToString()!, CultureInfo.InvariantCulture)));
         SelectAllCommand = new RelayCommand(SelectAll);
         ClearSelectionCommand = new RelayCommand(ClearSelection);
         ToggleDirectionCommand = new RelayCommand(() => Descending = !Descending);
@@ -134,6 +138,12 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand ResumeThumbnailsCommand { get; }
     public RelayCommand RetryFailedCommand { get; }
     public RelayCommand ClearFiltersCommand { get; }
+    public RelayCommand ClearAllFiltersCommand { get; }
+    public RelayCommand DownloadSelectedCommand { get; }
+    public RelayCommand CopySelectedPathsCommand { get; }
+
+    /// <summary>Rates the selection; the parameter is "0" to "5", or empty for unrated.</summary>
+    public RelayCommand RateSelectedCommand { get; }
     public RelayCommand SelectAllCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }
     public RelayCommand ToggleDirectionCommand { get; }
@@ -182,7 +192,14 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public SortOption Sort
     {
         get => _sort;
-        set { if (value is not null && Set(ref _sort, value)) { Save("ui.sort", value.Value.ToString()); Reload(); } }
+        set
+        {
+            if (value is null || !Set(ref _sort, value)) return;
+            Save("ui.sort", value.Value.ToString());
+            OnPropertyChanged(nameof(IsAscending));
+            OnPropertyChanged(nameof(DirectionToolTip));
+            Reload();
+        }
     }
 
     /// <summary>Reverses the order's natural direction (newest first, largest first, A to Z...).</summary>
@@ -193,12 +210,30 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         {
             if (!Set(ref _descending, value)) return;
             OnPropertyChanged(nameof(DirectionGlyph));
+            OnPropertyChanged(nameof(IsAscending));
+            OnPropertyChanged(nameof(DirectionToolTip));
             Save("ui.descending", value ? "1" : "0");
             Reload();
         }
     }
 
     public string DirectionGlyph => _descending ? "⇅ reversed" : "⇅";
+
+    /// <summary>True when the list runs from smallest, oldest or A (whichever the sort is).</summary>
+    public bool IsAscending => _descending ? !NaturallyAscending(_sort.Value) : NaturallyAscending(_sort.Value);
+
+    /// <summary>The order button's tooltip: which way the list runs now, and that a click reverses it.</summary>
+    public string DirectionToolTip => (_sort.Value, IsAscending) switch
+    {
+        (SortOrder.Name or SortOrder.Path, true) => "A to Z. Click to reverse.",
+        (SortOrder.Name or SortOrder.Path, false) => "Z to A. Click to reverse.",
+        (SortOrder.Modified or SortOrder.Added, false) => "Newest first. Click to reverse.",
+        (SortOrder.Modified or SortOrder.Added, true) => "Oldest first. Click to reverse.",
+        (SortOrder.Size, false) => "Largest first. Click to reverse.",
+        (SortOrder.Size, true) => "Smallest first. Click to reverse.",
+        (_, false) => "Highest first. Click to reverse.",
+        _ => "Lowest first. Click to reverse.",
+    };
 
     public SizeFilterOption SizeFilter
     {
@@ -215,7 +250,26 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public AgeBasisOption AgeBasis
     {
         get => _ageBasis;
-        set { if (value is not null && Set(ref _ageBasis, value)) FiltersChanged(); }
+        set
+        {
+            if (value is null || !Set(ref _ageBasis, value)) return;
+            OnPropertyChanged(nameof(AgeByModified));
+            OnPropertyChanged(nameof(AgeByAdded));
+            FiltersChanged();
+        }
+    }
+
+    // The Modified / Added buttons in the Filters panel: one is always on.
+    public bool AgeByModified
+    {
+        get => _ageBasis.Value == Library.AgeBasis.Modified;
+        set { if (value) AgeBasis = FilterOptions.AgeBases.First(b => b.Value == Library.AgeBasis.Modified); else OnPropertyChanged(); }
+    }
+
+    public bool AgeByAdded
+    {
+        get => _ageBasis.Value == Library.AgeBasis.Added;
+        set { if (value) AgeBasis = FilterOptions.AgeBases.First(b => b.Value == Library.AgeBasis.Added); else OnPropertyChanged(); }
     }
 
     public RatingFilterOption RatingFilter
@@ -230,7 +284,69 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private void FiltersChanged()
     {
         OnPropertyChanged(nameof(FiltersActive));
+        ChipsChanged();
         Reload();
+    }
+
+    /// <summary>The filters that are on, as chips (Show missing counts too: it changes what is listed).</summary>
+    public IReadOnlyList<FilterChip> ActiveFilters
+    {
+        get
+        {
+            var chips = new List<FilterChip>();
+            if (_ratingFilter.Value != Library.RatingFilter.Any)
+                chips.Add(Chip(_ratingFilter.Label, "rating", () => RatingFilter = FilterOptions.Ratings[0]));
+            if (_ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null)
+                chips.Add(Chip(DateChipLabel(_ageBasis, _ageFilter), "date", () => AgeFilter = FilterOptions.Ages[0]));
+            if (_sizeFilter.Min is not null || _sizeFilter.Max is not null)
+                chips.Add(Chip("Size " + _sizeFilter.Label.ToLowerInvariant(), "size", () => SizeFilter = FilterOptions.Sizes[0]));
+            if (_showMissing)
+                chips.Add(Chip("Including missing files", "missing files", () => ShowMissing = false));
+            return chips;
+
+            static FilterChip Chip(string label, string what, Action remove) => new(label, "Remove the " + what + " filter: " + label, new RelayCommand(remove));
+        }
+    }
+
+    /// <summary>"Modified in the last 7 days", "Added more than a year ago"...</summary>
+    internal static string DateChipLabel(AgeBasisOption basis, AgeFilterOption age)
+    {
+        string which = basis.Value == Library.AgeBasis.Added ? "Added" : "Modified";
+        if (age.NewerThan is not null) return which + " in the " + age.Label.ToLowerInvariant();          // "Last 7 days"
+        return which + " " + age.Label.ToLowerInvariant().Replace("older than", "more than") + " ago";  // "Older than a year"
+    }
+
+    /// <summary>The number on the Filters button (0: no number).</summary>
+    public int ActiveFilterCount => ActiveFilters.Count;
+
+    public bool HasActiveFilters => ActiveFilterCount > 0;
+
+    /// <summary>The strip under the toolbar: the selection's actions while something is selected, else the active filters.</summary>
+    public bool ShowSelectionBar => _selectedCount > 0;
+
+    public bool ShowFilterChips => _selectedCount == 0 && HasActiveFilters;
+
+    /// <summary>"214 files match" beside the chips.</summary>
+    public string MatchText => $"{_total:N0} file{(_total == 1 ? "" : "s")} match";
+
+    private void ChipsChanged()
+    {
+        OnPropertyChanged(nameof(ActiveFilters));
+        OnPropertyChanged(nameof(ActiveFilterCount));
+        OnPropertyChanged(nameof(HasActiveFilters));
+        OnPropertyChanged(nameof(ShowFilterChips));
+    }
+
+    /// <summary>Turns every filter off, Show missing included.</summary>
+    public void ClearAllFilters()
+    {
+        if (_showMissing)
+        {
+            _showMissing = false;   // set directly, so the list is read once, by ClearFilters
+            Save("ui.missing", "0");
+            OnPropertyChanged(nameof(ShowMissing));
+        }
+        ClearFilters();
     }
 
     public void ClearFilters()
@@ -253,7 +369,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public bool ShowMissing
     {
         get => _showMissing;
-        set { if (Set(ref _showMissing, value)) { Save("ui.missing", value ? "1" : "0"); Reload(); } }
+        set { if (Set(ref _showMissing, value)) { Save("ui.missing", value ? "1" : "0"); ChipsChanged(); Reload(); } }
     }
 
     public double TileSize
@@ -412,6 +528,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         Total = page.Total;
         OnPropertyChanged(nameof(Tiles));
         OnPropertyChanged(nameof(ListText));
+        OnPropertyChanged(nameof(MatchText));
         OnPropertyChanged(nameof(IsListEmpty));
         Regroup();
         SelectionChanged();
@@ -445,7 +562,15 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     {
         SelectedCount = _tiles.Count(t => t.IsSelected);
         OnPropertyChanged(nameof(SelectionText));
+        OnPropertyChanged(nameof(ShowSelectionBar));
+        OnPropertyChanged(nameof(ShowFilterChips));
+        OnPropertyChanged(nameof(SelectAllText));
+        DownloadSelectedCommand?.Refresh();
+        CopySelectedPathsCommand?.Refresh();
     }
+
+    /// <summary>"Select all 214" in the selection bar.</summary>
+    public string SelectAllText => $"Select all {_tiles.Count:N0}";
 
     /// <summary>
     /// A click: selects the tile (or deselects it if it was the only one selected). Ctrl adds or removes one tile;

@@ -206,6 +206,94 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task ActiveFiltersShowAsChipsThatEachTurnOneFilterOff()
+    {
+        await using var f = new Fixture(files: 6);
+        await f.AddModelsFolder();
+        Assert.Empty(f.Vm.ActiveFilters);
+        Assert.False(f.Vm.ShowFilterChips);
+        Assert.Equal(0, f.Vm.ActiveFilterCount);
+
+        f.Vm.Click(f.Vm.Tiles[0], false, false);
+        f.Vm.Rate(4);
+        f.Vm.ClearSelection();
+        f.Vm.RatingFilter = FilterOptions.Ratings.Single(r => r.Value == RatingFilter.AtLeast3);
+        f.Vm.AgeByAdded = true;
+        f.Vm.AgeFilter = FilterOptions.Ages.Single(a => a.Label == "Last 30 days");
+        f.Vm.ShowMissing = true;
+
+        Assert.Equal(new[] { "★★★ and up", "Added in the last 30 days", "Including missing files" }, f.Vm.ActiveFilters.Select(c => c.Label));
+        Assert.Equal(3, f.Vm.ActiveFilterCount);
+        Assert.True(f.Vm.ShowFilterChips);
+        Assert.Equal("1 file match", f.Vm.MatchText);
+        Assert.StartsWith("Remove the rating filter", f.Vm.ActiveFilters[0].RemoveLabel);
+
+        f.Vm.ActiveFilters[0].Remove.Execute(null);                 // the rating chip's ×
+        Assert.Equal(RatingFilter.Any, f.Vm.RatingFilter.Value);
+        Assert.Equal(new[] { "Added in the last 30 days", "Including missing files" }, f.Vm.ActiveFilters.Select(c => c.Label));
+        Assert.Equal("6 files match", f.Vm.MatchText);
+
+        f.Vm.ClearAllFiltersCommand.Execute(null);
+        Assert.Empty(f.Vm.ActiveFilters);
+        Assert.False(f.Vm.ShowMissing);
+        Assert.Equal("0", f.Db.GetSetting("ui.missing"));             // remembered as off
+        Assert.True(f.Vm.AgeByAdded);                                 // which date to use is a choice, not a filter
+    }
+
+    [Fact]
+    public void DateChipsReadAsAPhrase()
+    {
+        var modified = FilterOptions.AgeBases.Single(b => b.Value == AgeBasis.Modified);
+        Assert.Equal("Modified in the last 7 days", LibraryViewModel.DateChipLabel(modified, FilterOptions.Ages.Single(a => a.Label == "Last 7 days")));
+        Assert.Equal("Modified more than a year ago", LibraryViewModel.DateChipLabel(modified, FilterOptions.Ages.Single(a => a.Label == "Older than a year")));
+    }
+
+    [Fact]
+    public async Task WithASelectionTheStripOffersItsActionsInsteadOfTheChips()
+    {
+        await using var f = new Fixture(files: 4);
+        await f.AddModelsFolder();
+        f.Vm.RatingFilter = FilterOptions.Ratings.Single(r => r.Value == RatingFilter.Unrated);
+        Assert.True(f.Vm.ShowFilterChips);
+        Assert.False(f.Vm.ShowSelectionBar);
+        Assert.False(f.Vm.CopySelectedPathsCommand.CanExecute(null));
+
+        f.Vm.Click(f.Vm.Tiles[0], false, false);
+        f.Vm.Click(f.Vm.Tiles[1], true, false);
+        Assert.True(f.Vm.ShowSelectionBar);
+        Assert.False(f.Vm.ShowFilterChips);
+        Assert.Equal("2 selected", f.Vm.SelectionText);
+        Assert.Equal("Select all 4", f.Vm.SelectAllText);
+
+        f.Vm.CopySelectedPathsCommand.Execute(null);
+        Assert.Equal(2, f.Shell.Clipboard!.Split(Environment.NewLine).Length);
+        f.Vm.RateSelectedCommand.Execute("5");
+        Assert.Equal(2, f.Db.List(new ListQuery { Rating = RatingFilter.Five }).Total);
+        f.Vm.Click(f.Vm.Tiles[0], false, false);
+        f.Vm.RateSelectedCommand.Execute("");                         // unrated again
+        Assert.Equal(1, f.Db.List(new ListQuery { Rating = RatingFilter.Five }).Total);
+
+        f.Vm.ClearSelection();
+        Assert.False(f.Vm.ShowSelectionBar);
+        Assert.True(f.Vm.ShowFilterChips);
+    }
+
+    [Fact]
+    public async Task TheOrderButtonSaysWhichWayTheListRuns()
+    {
+        await using var f = new Fixture(files: 2);
+        await f.AddModelsFolder();
+        Assert.True(f.Vm.IsAscending);
+        Assert.Equal("A to Z. Click to reverse.", f.Vm.DirectionToolTip);
+        f.Vm.Sort = FilterOptions.Sorts.Single(s => s.Value == SortOrder.Added);
+        Assert.False(f.Vm.IsAscending);
+        Assert.Equal("Newest first. Click to reverse.", f.Vm.DirectionToolTip);
+        f.Vm.Descending = true;
+        Assert.True(f.Vm.IsAscending);
+        Assert.Equal("Oldest first. Click to reverse.", f.Vm.DirectionToolTip);
+    }
+
+    [Fact]
     public async Task SortingByDateShowsDatesAndTheDirectionCanBeReversed()
     {
         await using var f = new Fixture(files: 3);
