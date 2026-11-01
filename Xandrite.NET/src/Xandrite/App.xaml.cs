@@ -18,6 +18,10 @@ namespace Xandrite.App;
 public partial class App : Application
 {
     private Mutex? _singleInstance;
+
+    /// <summary>Started with --developer: Preferences shows the Developer menu (extra logging).</summary>
+    public static bool DeveloperMode { get; } =
+        Environment.GetCommandLineArgs().Skip(1).Any(a => string.Equals(a, "--developer", StringComparison.OrdinalIgnoreCase));
     private LibraryDatabase? _db;
     private LibraryViewModel? _library;
     private ViewerViewModel? _viewer;
@@ -49,6 +53,7 @@ public partial class App : Application
         WatchForCrashes();
         var updates = new VelopackUpdates();
         _log.Info("app.start",
+            ("developer", DeveloperMode),
             ("version", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)),
             ("installed", updates.IsInstalled),
             ("os", Environment.OSVersion.VersionString),
@@ -88,7 +93,7 @@ public partial class App : Application
 
         var shell = new WpfShell();
         var dispatcher = new WpfDispatcher(Dispatcher);
-        _library = new LibraryViewModel(_db, location, queue, shell, dispatcher, log: _log);
+        _library = new LibraryViewModel(_db, location, queue, shell, dispatcher, log: _log) { DeveloperMode = DeveloperMode };
 
         // The viewer: what it changes (thumbnail, view, rating) shows in the library grid straight away.
         _viewer = new ViewerViewModel(_db, location, queue, CreateRenderer, shell, dispatcher, _log);
@@ -121,7 +126,7 @@ public partial class App : Application
                 library.ImportText = $"Bringing thumbnails across from the Electron app: {p.Done:N0} of {p.Total:N0}");
             try
             {
-                int copied = await Task.Run(() => ElectronImport.CopyThumbnailsAsync(_db, location, electron, progress));
+                int copied = await DevLog.Run("import.thumbnails", () => ElectronImport.CopyThumbnailsAsync(_db, location, electron, progress));
                 _log.Info("data.thumbnails_imported", ("from", electron), ("copied", copied));
                 library.ImportText = "";
             }
