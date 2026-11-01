@@ -185,6 +185,9 @@ which way ("A to Z", "Newest first"...). When sorting by date, each tile shows i
 Click **Filters** in the toolbar to narrow the grid further:
 
 - **Rating:** any, unrated, rated, at least one to four stars, or five stars.
+- **Views:** **All**; **Custom**, models whose thumbnail is drawn from a view you saved in the viewer (the tiles with
+  the *custom view* badge); or **Default**, models still using the automatic view. Handy for finding the models you
+  haven't given a better angle yet.
 - **Date:** choose **Modified** or **Added**, then a period: the last 24 hours, 7 days, 30 days or year, or more than a
   year ago.
 - **File size:** under 100 KB, 100 KB – 1 MB, 1 – 10 MB, 10 – 50 MB, over 50 MB.

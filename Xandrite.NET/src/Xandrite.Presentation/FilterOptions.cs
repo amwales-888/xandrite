@@ -13,6 +13,8 @@ public sealed record AgeBasisOption(string Label, AgeBasis Value);
 
 public sealed record RatingFilterOption(string Label, RatingFilter Value);
 
+public sealed record ViewFilterOption(string Label, ViewFilter Value);
+
 /// <summary>A filter that is on, shown as a chip under the toolbar; its button turns that one filter off.</summary>
 public sealed record FilterChip(string Label, string RemoveLabel, RelayCommand Remove);
 
@@ -67,5 +69,12 @@ public static class FilterOptions
         new("★★★ and up", RatingFilter.AtLeast3),
         new("★★★★ and up", RatingFilter.AtLeast4),
         new("★★★★★", RatingFilter.Five),
+    ];
+
+    public static IReadOnlyList<ViewFilterOption> Views { get; } =
+    [
+        new("All", ViewFilter.Any),
+        new("Custom", ViewFilter.Custom),
+        new("Default", ViewFilter.Default),
     ];
 }

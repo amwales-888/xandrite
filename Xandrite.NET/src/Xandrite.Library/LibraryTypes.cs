@@ -23,6 +23,9 @@ public enum AgeBasis { Modified, Added }
 
 public enum RatingFilter { Any, Unrated, Rated, Zero, AtLeast1, AtLeast2, AtLeast3, AtLeast4, Five }
 
+/// <summary>Models by their thumbnail's view: one saved in the viewer (custom), or the automatic one (default).</summary>
+public enum ViewFilter { Any, Custom, Default }
+
 /// <summary>Which files to list. Mirrors the options of listLocations in the JS app.</summary>
 public sealed record ListQuery
 {
@@ -48,6 +51,7 @@ public sealed record ListQuery
     public double? Before { get; init; }
     public AgeBasis AgeBasis { get; init; } = AgeBasis.Modified;
     public RatingFilter Rating { get; init; } = RatingFilter.Any;
+    public ViewFilter View { get; init; } = ViewFilter.Any;
 }
 
 public enum ThumbnailState { Pending, Ok, Failed }

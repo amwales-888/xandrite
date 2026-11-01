@@ -241,6 +241,34 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task TheViewsFilterKeepsCustomOrDefaultViews()
+    {
+        await using var f = new Fixture(files: 4);
+        await f.AddModelsFolder();
+        string custom = f.Vm.Tiles[0].Row.Sha256;
+        f.Db.SetView(custom, new SavedView([1, 2, 3], [0, 0, 0], 35, true));
+
+        f.Vm.ViewFilter = FilterOptions.Views.Single(v => v.Value == ViewFilter.Custom);
+        Assert.Equal(custom, Assert.Single(f.Vm.Tiles).Row.Sha256);
+        Assert.True(f.Vm.FiltersActive);
+        Assert.Equal("Custom views", Assert.Single(f.Vm.ActiveFilters).Label);
+
+        f.Vm.ViewFilter = FilterOptions.Views.Single(v => v.Value == ViewFilter.Default);
+        Assert.Equal(3, f.Vm.Total);
+        Assert.False(f.Vm.Tiles.Any(t => t.Row.Sha256 == custom));
+
+        // Saving a view in the viewer takes the model out of "Default views" straight away.
+        string next = f.Vm.Tiles[0].Row.Sha256;
+        f.Db.SetView(next, new SavedView([1, 2, 3], [0, 0, 0], 35, true));
+        f.Vm.ApplyThumbnailReplaced(next);
+        Assert.Equal(2, f.Vm.Total);
+
+        f.Vm.ActiveFilters[0].Remove.Execute(null);
+        Assert.Equal(ViewFilter.Any, f.Vm.ViewFilter.Value);
+        Assert.Equal(4, f.Vm.Total);
+    }
+
+    [Fact]
     public void DateChipsReadAsAPhrase()
     {
         var modified = FilterOptions.AgeBases.Single(b => b.Value == AgeBasis.Modified);
