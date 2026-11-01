@@ -1,3 +1,4 @@
+using Xandrite.Library.Scanning;
 using Xandrite.Library.Logging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -162,6 +163,9 @@ internal sealed unsafe class OpenCallback : NativeObject
 {
     private readonly IoMeter? _meter = IoMeter.Current;
 
+    /// <summary>Volumes 7-Zip asked for beyond the first (a multi-volume RAR set).</summary>
+    public int VolumeCount { get; private set; }
+
     private static readonly void** OpenTable = Vtable(
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetTotal,
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetCompleted);
@@ -216,8 +220,9 @@ internal sealed unsafe class OpenCallback : NativeObject
             string file = Path.GetFileName(ReadWide(name));
             string path = Path.Combine(Path.GetDirectoryName(self._firstVolume) ?? "", file);
             if (file.Length == 0 || !File.Exists(path)) return S_FALSE;   // no such volume: 7-Zip reports the set as incomplete
-            Stream input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
-            if (self._meter is { } meter) input = new MeteredStream(input, meter, path);   // 7-Zip's thread: use the meter of whoever opened the set
+            // 7-Zip's thread: measured with the meter of whoever opened the set.
+            var input = ArchiveFiles.Buffered(ArchiveFiles.OpenUnbuffered(path, "rar volume", meter: self._meter));
+            self.VolumeCount++;
             var volume = new InStream(input);
             self._volumes.Add(volume);
             *stream = volume.Pointer(IID_IInStream);
@@ -290,6 +295,12 @@ internal sealed unsafe class ExtractCallback : NativeObject
 
     public bool PasswordRequested { get; private set; }
 
+    /// <summary>For developer logging of archive I/O: the archive, and each item's name.</summary>
+    public string ArchivePath { get; init; } = "";
+    public Func<uint, string?>? NameOf { get; init; }
+    private long _itemStarted, _itemBytes;
+    private bool _logIo;
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static int SetTotal(nint block, ulong total) => S_OK;
 
@@ -307,6 +318,13 @@ internal sealed unsafe class ExtractCallback : NativeObject
         self._currentWanted = askMode == AskExtract && self._wanted(index);
         self._tooLarge = false;
         self._buffer = null;
+        self._logIo = DevLog.ArchiveIo;
+        if (self._logIo)
+        {
+            self._itemStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            self._itemBytes = 0;
+            DevLog.ArchiveItem(self.ArchivePath, index, self.NameOf?.Invoke(index), self._currentWanted);
+        }
         if (self._currentWanted)
         {
             self._buffer = new MemoryStream();
@@ -322,6 +340,9 @@ internal sealed unsafe class ExtractCallback : NativeObject
     private static int SetOperationResult(nint block, int result)
     {
         var self = Self<ExtractCallback>(block);
+        if (self._logIo)
+            DevLog.ArchiveItemEnd(self.ArchivePath, self._current, self.NameOf?.Invoke(self._current), result, self._itemBytes,
+                (long)System.Diagnostics.Stopwatch.GetElapsedTime(self._itemStarted).TotalMilliseconds);
         if (!self._currentWanted) return S_OK;
         var buffer = self._buffer;
         self._buffer = null;
@@ -349,6 +370,11 @@ internal sealed unsafe class ExtractCallback : NativeObject
     private int Write(byte* data, uint size, uint* processed)
     {
         if (processed != null) *processed = size;
+        if (_logIo)
+        {
+            _itemBytes += size;
+            DevLog.ArchiveWrite(ArchivePath, _current, size, _itemBytes);
+        }
         if (_buffer is null || _tooLarge) return S_OK;
         if (_buffer.Length + size > _maxBytes)
         {
@@ -400,13 +426,13 @@ internal sealed unsafe class ExtractCallback : NativeObject
 /// <summary>The parts of a split archive (name.7z.001, name.7z.002 ...) read as one stream.</summary>
 internal sealed class SplitStream : Stream
 {
-    private readonly FileStream[] _parts;
+    private readonly Stream[] _parts;
     private readonly long[] _starts;
     private long _position;
 
     public SplitStream(IReadOnlyList<string> paths)
     {
-        _parts = paths.Select(p => IoMeter.OpenFile(p, 1 << 16)).ToArray();
+        _parts = paths.Select(p => ArchiveFiles.OpenUnbuffered(p, "archive part")).ToArray();
         _starts = new long[_parts.Length + 1];
         for (int i = 0; i < _parts.Length; i++) _starts[i + 1] = _starts[i] + _parts[i].Length;
     }

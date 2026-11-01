@@ -55,6 +55,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private readonly ConcurrentDictionary<ArchiveStream, byte> _streams = new();
     private int _archivesOpen;
     private RunMetrics _metrics = new();
+    private long _pausedSince, _pausedTicks;   // when the current pause began (0: not paused), and pauses so far this run (under _gate)
 
     /// <summary>Where a thumbnail run's time goes: thumbs.progress every minute, totals in thumbs.end.</summary>
     private sealed class RunMetrics
@@ -109,6 +110,30 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     /// <summary>Where the queue records each thumbnail (with its timings), failures, skips and totals.</summary>
     public ILog Log { get; init; } = NullLog.Instance;
 
+    /// <summary>The statistics file: one line per run with how long it took and how much it drew (see <see cref="Stat"/>).</summary>
+    public ILog Statistics { get; init; } = NullLog.Instance;
+
+    /// <summary>Starts or ends a pause, keeping count of the time paused. Call under _gate.</summary>
+    private void SetPaused(bool paused)
+    {
+        if (paused == _paused) return;
+        _paused = paused;
+        long now = Stopwatch.GetTimestamp();
+        if (paused) _pausedSince = now;
+        else if (_pausedSince != 0)
+        {
+            _pausedTicks += now - _pausedSince;
+            _pausedSince = 0;
+        }
+    }
+
+    /// <summary>Time paused in this run so far, including a pause still going. Call under _gate.</summary>
+    private long PausedMs()
+    {
+        long ticks = _pausedTicks + (_pausedSince != 0 ? Stopwatch.GetTimestamp() - _pausedSince : 0);
+        return ticks * 1000 / Stopwatch.Frequency;
+    }
+
     public event Action<ThumbnailQueueStatus>? Progress;
     public event Action<ThumbnailJobDone>? JobDone;
     public event Action? Idle;
@@ -140,12 +165,13 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             _active = true;
             _again = false;
             _paused = false;
+            _pausedSince = _pausedTicks = 0;
             _resumed.TrySetResult();   // never start behind a gate left over from an earlier run
             if (_cancel.IsCancellationRequested) _cancel = new CancellationTokenSource();
             _blocked = null;
             _total = _done = _failed = _skipped = 0;
             _current = null;
-            _run = Task.Run(RunAsync);
+            _run = DevLog.Run("thumbs.run", RunAsync);
         }
     }
 
@@ -154,7 +180,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         lock (_gate)
         {
             if (_paused || !_active) return;
-            _paused = true;
+            SetPaused(true);
             _resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
         Log.Info("thumbs.paused");
@@ -170,7 +196,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             start = !_active;
             if (_paused)
             {
-                _paused = false;
+                SetPaused(false);
                 _resumed.TrySetResult();
                 Log.Info("thumbs.resumed");
             }
@@ -198,13 +224,18 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     {
         var cancellation = _cancel.Token;
         long started = Stopwatch.GetTimestamp();
+        var startedAt = DateTimeOffset.Now;
+        long waitingAtStart = 0;
+        bool crashed = false;
         using var stopProgress = new CancellationTokenSource();
         Task progressTask = Task.CompletedTask;
         try
         {
             Directory.CreateDirectory(_location.ThumbnailFolder);
             ForgetMissingImages();
-            Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()));
+            waitingAtStart = _db.GetThumbnailCounts(Look.RenderVersion).Pending;
+            Log.Info("thumbs.start", ("pending", waitingAtStart), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()),
+                ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
             _metrics = new RunMetrics
             {
                 Io = new IoMeter
@@ -231,7 +262,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 Emit();
 
                 var work = new ConcurrentQueue<WorkItem>(Plan(jobs));
-                await Task.WhenAll(Enumerable.Range(0, _renderers.Length).Select(slot => Task.Run(() => WorkerAsync(slot, work, cancellation))));
+                await Task.WhenAll(Enumerable.Range(0, _renderers.Length).Select(slot => DevLog.Run($"thumbs.worker.{slot}", () => WorkerAsync(slot, work, cancellation))));
 
                 // The renderer broke: wait for Resume (which clears the message), then look at what is still pending.
                 Task wait;
@@ -240,7 +271,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                     if (_blocked is null) continue;
                     if (!_paused)
                     {
-                        _paused = true;
+                        SetPaused(true);
                         _resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     }
                     wait = _resumed.Task;
@@ -255,6 +286,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         }
         catch (Exception e)
         {
+            crashed = true;
             lock (_gate) _blocked = "The thumbnail queue stopped: " + e.Message;
             Log.Error("thumbs.crashed", ("message", e.ToString()));
         }
@@ -262,10 +294,21 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             stopProgress.Cancel();
             await progressTask;
+            long? waitingAtEnd = null;
+            try
+            {
+                waitingAtEnd = _db.GetThumbnailCounts(Look.RenderVersion).Pending;
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                // The library may be closing; the statistics line shows "-".
+            }
             bool restart;
             lock (_gate)
             {
                 var m = _metrics;
+                WriteStatistics(startedAt, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, waitingAtStart, waitingAtEnd,
+                    cancellation.IsCancellationRequested, crashed);
                 Log.InfoOrWarn(_failed > 0 || cancellation.IsCancellationRequested, "thumbs.end",
                     ("duration_ms", (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds), ("made", _done), ("failed", _failed),
                     ("skipped", _skipped), ("cancelled", cancellation.IsCancellationRequested),
@@ -275,7 +318,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                     ("render_ms", m.Render.Ms), ("encode_ms", m.Encode.Ms), ("write_ms", m.Write.Ms), ("stalls", Interlocked.Read(ref m.Stalls)));
                 _current = null;
                 _active = false;
-                _paused = false;
+                SetPaused(false);
                 restart = _again && !cancellation.IsCancellationRequested;
                 _again = false;
             }
@@ -292,6 +335,23 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     }
 
     private static double Mb(long bytes) => Math.Round(bytes / 1048576.0, 1);
+
+    /// <summary>The run's line in the statistics file (not written for a run that found nothing to draw). Call under _gate.</summary>
+    private void WriteStatistics(DateTimeOffset startedAt, long ms, long waitingAtStart, long? waitingAtEnd, bool stopped, bool crashed)
+    {
+        if (_done + _failed + _skipped == 0 && !crashed) return;
+        var m = _metrics;
+        long pausedMs = PausedMs(), workingMs = Math.Max(0, ms - pausedMs);
+        Statistics.InfoOrWarn(stopped || crashed || _failed > 0, "thumbnails",
+            ("result", crashed ? "stopped by an error" : stopped ? "stopped" : "finished"),
+            ("started", Stat.Time(startedAt)), ("ended", Stat.Time(DateTimeOffset.Now)), ("took", Stat.Took(ms)), ("duration_s", Stat.Seconds(ms)),
+            ("paused", Stat.Took(pausedMs)), ("working", Stat.Took(workingMs)),
+            ("made", _done), ("failed", _failed), ("skipped", _skipped), ("waiting_at_start", waitingAtStart), ("waiting_at_end", waitingAtEnd),
+            ("per_minute", Stat.Rate(_done, workingMs, per: 60)),
+            ("read_mb", Stat.Mb(m.Io.Read.Bytes)), ("read_mb_s", m.Io.Read.MBpsForLog), ("slow_reads", Interlocked.Read(ref m.Stalls)),
+            ("speed", Speed.ToString().ToLowerInvariant()), ("workers", Limits.Workers), ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024),
+            ("version", Stat.Version), ("cores", Environment.ProcessorCount));
+    }
 
     /// <summary>Every minute while drawing: how far it has got and how fast it is going now.</summary>
     private async Task ReportProgressAsync(long started, CancellationToken stop)
@@ -492,7 +552,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         var limits = BackgroundWork.Current;
         var io = _metrics.Io;
         long extractMs = 0;   // reading the whole archive, including waiting for the models to be drawn (only 2 wait at a time)
-        var producer = Task.Run(async () =>
+        var producer = DevLog.Run("thumbs.archive_read", async () =>
         {
             BackgroundWork.Current = limits;
             IoMeter.Current = io;
@@ -518,7 +578,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 extractMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 stream.Models.Writer.TryComplete();
             }
-        }, CancellationToken.None);
+        });
 
         _streams[stream] = 0;
         try
@@ -715,7 +775,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             _cancel.Cancel();
             _resumed.TrySetResult();
-            _paused = false;
+            SetPaused(false);
             run = _run;
         }
         if (run is not null)

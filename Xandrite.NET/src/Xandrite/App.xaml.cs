@@ -18,11 +18,16 @@ namespace Xandrite.App;
 public partial class App : Application
 {
     private Mutex? _singleInstance;
+
+    /// <summary>Started with --developer: Preferences shows the Developer menu (extra logging).</summary>
+    public static bool DeveloperMode { get; } =
+        Environment.GetCommandLineArgs().Skip(1).Any(a => string.Equals(a, "--developer", StringComparison.OrdinalIgnoreCase));
     private LibraryDatabase? _db;
     private LibraryViewModel? _library;
     private ViewerViewModel? _viewer;
     private UpdateViewModel? _updates;
     private ILog _log = NullLog.Instance;
+    private ILog _statistics = NullLog.Instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -46,9 +51,19 @@ public partial class App : Application
         {
             _log = NullLog.Instance;   // no log is better than no app
         }
+        try
+        {
+            // Small (a line per scan or thumbnail run), so 2 MB holds years of history.
+            _statistics = new FileLog(location.StatisticsFile, maxBytes: 2 * 1024 * 1024, keep: 2);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _statistics = NullLog.Instance;
+        }
         WatchForCrashes();
         var updates = new VelopackUpdates();
         _log.Info("app.start",
+            ("developer", DeveloperMode),
             ("version", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)),
             ("installed", updates.IsInstalled),
             ("os", Environment.OSVersion.VersionString),
@@ -84,11 +99,11 @@ public partial class App : Application
 
         // A few workers draw at once, each with its own Direct3D renderer.
         int workers = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
-        var queue = new ThumbnailQueue(_db, location, CreateRenderer, workers: workers) { Log = _log };
+        var queue = new ThumbnailQueue(_db, location, CreateRenderer, workers: workers) { Log = _log, Statistics = _statistics };
 
         var shell = new WpfShell();
         var dispatcher = new WpfDispatcher(Dispatcher);
-        _library = new LibraryViewModel(_db, location, queue, shell, dispatcher, log: _log);
+        _library = new LibraryViewModel(_db, location, queue, shell, dispatcher, log: _log, statistics: _statistics) { DeveloperMode = DeveloperMode };
 
         // The viewer: what it changes (thumbnail, view, rating) shows in the library grid straight away.
         _viewer = new ViewerViewModel(_db, location, queue, CreateRenderer, shell, dispatcher, _log);
@@ -121,7 +136,7 @@ public partial class App : Application
                 library.ImportText = $"Bringing thumbnails across from the Electron app: {p.Done:N0} of {p.Total:N0}");
             try
             {
-                int copied = await Task.Run(() => ElectronImport.CopyThumbnailsAsync(_db, location, electron, progress));
+                int copied = await DevLog.Run("import.thumbnails", () => ElectronImport.CopyThumbnailsAsync(_db, location, electron, progress));
                 _log.Info("data.thumbnails_imported", ("from", electron), ("copied", copied));
                 library.ImportText = "";
             }
@@ -178,6 +193,7 @@ public partial class App : Application
             Task.Run(() => library.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(5));
         }
         _db?.Dispose();
+        (_statistics as IDisposable)?.Dispose();
         (_log as IDisposable)?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
