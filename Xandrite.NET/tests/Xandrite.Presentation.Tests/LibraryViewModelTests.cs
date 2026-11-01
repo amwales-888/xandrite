@@ -296,6 +296,49 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task DeveloperLoggingOptionsAreSavedButOnlyUsedInDeveloperMode()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        string logFile = Path.Combine(f.Dir, "logs", "x.log");
+        using var log = new Xandrite.Library.Logging.FileLog(logFile);
+        try
+        {
+            var dev = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log) { DeveloperMode = true };
+            dev.Initialize();
+            Assert.False(dev.LogArchives);
+            dev.LogArchives = true;
+            dev.LogThreadIds = true;
+            Assert.True(Xandrite.Library.Logging.DevLog.Archives);
+            Assert.True(log.ThreadIds);
+            Assert.Equal("1", f.Db.GetSetting(LibraryViewModel.DevArchivesSetting));
+
+            // Started normally: the saved options are not put in force (and the menu is hidden).
+            Xandrite.Library.Logging.DevLog.Archives = false;
+            log.ThreadIds = false;
+            var normal = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log);
+            normal.Initialize();
+            Assert.False(normal.DeveloperMode);
+            Assert.False(Xandrite.Library.Logging.DevLog.Archives);
+            Assert.False(log.ThreadIds);
+
+            // Started with --developer again: they are.
+            var again = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log) { DeveloperMode = true };
+            again.Initialize();
+            Assert.True(again.LogArchives);
+            Assert.True(again.LogThreadIds);
+            Assert.False(again.LogFiles);
+            log.Flush();
+            Assert.Contains("developer.options archives=true archive_io=false files=false threads=false thread_ids=true", File.ReadAllText(logFile));
+        }
+        finally
+        {
+            Xandrite.Library.Logging.DevLog.Archives = false;
+            Xandrite.Library.Logging.DevLog.Log = Xandrite.Library.Logging.NullLog.Instance;
+        }
+    }
+
+    [Fact]
     public void DateChipsReadAsAPhrase()
     {
         var modified = FilterOptions.AgeBases.Single(b => b.Value == AgeBasis.Modified);

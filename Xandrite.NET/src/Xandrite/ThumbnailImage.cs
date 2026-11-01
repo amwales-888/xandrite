@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -83,7 +84,7 @@ public static class ThumbnailImage
         try
         {
             if (!ReferenceEquals(image.GetValue(RequestProperty), request)) return;   // the tile scrolled away meanwhile
-            source = await Task.Run(() => Decode(key));
+            source = await DevLog.Run("tile.decode", () => Decode(key));
         }
         finally
         {
@@ -99,7 +100,7 @@ public static class ThumbnailImage
         {
             if (!File.Exists(key.Path)) return null;
             // Read the bytes first: the file can be replaced by a new drawing at any moment, and must not stay locked.
-            byte[] bytes = File.ReadAllBytes(key.Path);
+            byte[] bytes = DevLog.ReadAllBytes(key.Path, "tile image");
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
