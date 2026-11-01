@@ -118,3 +118,16 @@ Work runs on the .NET thread pool, and asynchronous work can move to another poo
 
 These logs grow quickly (one line or two per file and per thumbnail); the log keeps about 60 MB, so turn them off
 again when you are done.
+
+### Archive read size
+
+Archive files are read from the disk or share in pieces of **1 MB** by default. Each decompressor asks for much less
+at a time (the zip reader asks for 8 KB, 7-Zip for up to 256 KB, RAR for small headers), and those requests are met
+from the 1 MB piece already read, so a share sees a few large reads rather than many small round trips.
+
+**Preferences (the gear) → Developer → Archive read size** offers 64 KB, 256 KB, 1 MB and 4 MB. Unlike the logging
+switches, the chosen size applies whether or not the app was started with `--developer`; the menu is only shown
+there to keep it out of the way. `scan.start` and `thumbs.start` record it as `archive_read_kb=…`, and with
+**Log archive reads, seeks and writes** on, each `archive.read … asked=` line shows a read of that size (smaller only
+at the end of a file). Compare `archive_read_calls` and `read_mb_s` in `scan.metrics` between runs to see what a
+size does on your network.

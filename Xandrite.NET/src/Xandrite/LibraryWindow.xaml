@@ -438,6 +438,13 @@
                             <MenuItem Header="Log threads started and ended" IsCheckable="True" IsChecked="{Binding LogThreads}" />
                             <MenuItem Header="Thread id on every log line" IsCheckable="True" IsChecked="{Binding LogThreadIds}" />
                             <Separator />
+                            <MenuItem Header="Archive read size">
+                                <MenuItem Header="64 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead64}" />
+                                <MenuItem Header="256 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead256}" />
+                                <MenuItem Header="1 MB (default)" IsCheckable="True" IsChecked="{Binding ArchiveRead1024}" />
+                                <MenuItem Header="4 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead4096}" />
+                            </MenuItem>
+                            <Separator />
                             <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />
                         </MenuItem>
                     </MenuItem>

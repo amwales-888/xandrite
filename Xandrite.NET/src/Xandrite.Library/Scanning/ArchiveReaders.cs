@@ -116,7 +116,7 @@ public sealed class ZipArchiveReader : IArchiveReader
     public async Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        await using var stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath), archivePath);
+        await using var stream = ArchiveFiles.OpenRead(archivePath, "zip", FileOptions.Asynchronous);
         using var opened = DevLog.Archive(archivePath, "zip");
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
         if (zip.Entries.Count > limits.MaxEntries)
@@ -150,7 +150,7 @@ public sealed class ZipArchiveReader : IArchiveReader
         Stream stream;
         try
         {
-            stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath), archivePath);
+            stream = ArchiveFiles.OpenRead(archivePath, "zip", FileOptions.Asynchronous);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {

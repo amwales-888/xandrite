@@ -1,3 +1,4 @@
+using Xandrite.Library.Scanning;
 using Xandrite.Library.Logging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -219,10 +220,9 @@ internal sealed unsafe class OpenCallback : NativeObject
             string file = Path.GetFileName(ReadWide(name));
             string path = Path.Combine(Path.GetDirectoryName(self._firstVolume) ?? "", file);
             if (file.Length == 0 || !File.Exists(path)) return S_FALSE;   // no such volume: 7-Zip reports the set as incomplete
-            Stream input = DevLog.OpenRead(path, 1 << 16, FileOptions.None, "rar volume");
+            // 7-Zip's thread: measured with the meter of whoever opened the set.
+            var input = ArchiveFiles.Buffered(ArchiveFiles.OpenUnbuffered(path, "rar volume", meter: self._meter));
             self.VolumeCount++;
-            input = DevLog.ArchiveIoStream(input, path);
-            if (self._meter is { } meter) input = new MeteredStream(input, meter, path);   // 7-Zip's thread: use the meter of whoever opened the set
             var volume = new InStream(input);
             self._volumes.Add(volume);
             *stream = volume.Pointer(IID_IInStream);
@@ -432,7 +432,7 @@ internal sealed class SplitStream : Stream
 
     public SplitStream(IReadOnlyList<string> paths)
     {
-        _parts = paths.Select(p => DevLog.ArchiveIoStream(IoMeter.OpenFile(p, 1 << 16, purpose: "archive part"), p)).ToArray();
+        _parts = paths.Select(p => ArchiveFiles.OpenUnbuffered(p, "archive part")).ToArray();
         _starts = new long[_parts.Length + 1];
         for (int i = 0; i < _parts.Length; i++) _starts[i + 1] = _starts[i] + _parts[i].Length;
     }

@@ -139,7 +139,8 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         // same millisecond cannot be confused (which would spoil the "new" and "missing" counts).
         long scanId = Math.Max(db.Now(), db.Locked(c => c.Scalar("SELECT COALESCE(MAX(last_seen_scan), 0) FROM locations")) + 1);
         var counts = new Counts();
-        Log.Info("scan.start", ("root", root), ("archives", includeArchives), ("concurrency", Concurrency));
+        Log.Info("scan.start", ("root", root), ("archives", includeArchives), ("concurrency", Concurrency),
+            ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
 
         void Report(string? current)
         {
