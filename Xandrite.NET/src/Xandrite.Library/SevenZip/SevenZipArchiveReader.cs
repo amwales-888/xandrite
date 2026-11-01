@@ -1,3 +1,5 @@
+using Xandrite.Library.Logging;
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using Xandrite.Library.Scanning;
 using Xandrite.Library.Thumbnails;
@@ -57,14 +59,16 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             {
                 // name.7z.001, .002 ...: the parts are simply one file cut into pieces.
                 string folder = Path.GetDirectoryName(path) ?? "";
+                long listed = Stopwatch.GetTimestamp();
                 var names = Directory.EnumerateFiles(folder).Select(Path.GetFileName).OfType<string>().ToList();
+                IoMeter.Current?.List.Add(Stopwatch.GetTimestamp() - listed, calls: 1);
                 var (parts, problem) = FolderWalker.ArchiveParts(name, names);
                 if (problem is not null) throw new InvalidDataException(problem);
-                stream = new SplitStream(parts.Select(p => Path.Combine(folder, p)).ToList());
+                stream = IoMeter.Wrap(new SplitStream(parts.Select(p => Path.Combine(folder, p)).ToList()), path);
             }
             else
             {
-                stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
+                stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 16), path);
             }
 
             byte format;

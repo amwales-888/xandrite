@@ -53,7 +53,23 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private string? _current;
     private ThumbnailSpeed _speed;
     private readonly ConcurrentDictionary<ArchiveStream, byte> _streams = new();
-    private int _archivesOpen;   // archives taken from the work but not finished: idle workers stay to help (under _gate)
+    private int _archivesOpen;
+    private RunMetrics _metrics = new();
+
+    /// <summary>Where a thumbnail run's time goes: thumbs.progress every minute, totals in thumbs.end.</summary>
+    private sealed class RunMetrics
+    {
+        public IoMeter Io { get; init; } = new();   // reading models and archives from disk or the network
+        public Meter Hash { get; } = new();         // checking the bytes are still the model the scan found
+        public Meter Load { get; } = new();         // parsing the STL or 3MF
+        public Meter Render { get; } = new();       // drawing (Direct3D)
+        public Meter Encode { get; } = new();       // making the PNG
+        public Meter Write { get; } = new();        // saving the PNG and recording it in the library
+        public long Stalls;
+    }
+
+    /// <summary>How often a running queue writes thumbs.progress to the log.</summary>
+    public TimeSpan ProgressEvery { get; init; } = TimeSpan.FromSeconds(60);   // archives taken from the work but not finished: idle workers stay to help (under _gate)
 
     public ThumbnailQueue(LibraryDatabase db, LibraryLocation location, Func<IModelRenderer> createRenderer, ModelSource? source = null, int workers = 2)
     {
@@ -182,11 +198,25 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     {
         var cancellation = _cancel.Token;
         long started = Stopwatch.GetTimestamp();
+        using var stopProgress = new CancellationTokenSource();
+        Task progressTask = Task.CompletedTask;
         try
         {
             Directory.CreateDirectory(_location.ThumbnailFolder);
             ForgetMissingImages();
             Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()));
+            _metrics = new RunMetrics
+            {
+                Io = new IoMeter
+                {
+                    OnStall = (path, ms, bytes) =>
+                    {
+                        Interlocked.Increment(ref _metrics.Stalls);
+                        Log.Warn("thumbs.slow", ("what", "read"), ("path", path), ("ms", ms), ("bytes", bytes));
+                    },
+                },
+            };
+            progressTask = ReportProgressAsync(started, stopProgress.Token);
 
             while (!cancellation.IsCancellationRequested)
             {
@@ -230,12 +260,19 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         }
         finally
         {
+            stopProgress.Cancel();
+            await progressTask;
             bool restart;
             lock (_gate)
             {
+                var m = _metrics;
                 Log.InfoOrWarn(_failed > 0 || cancellation.IsCancellationRequested, "thumbs.end",
                     ("duration_ms", (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds), ("made", _done), ("failed", _failed),
-                    ("skipped", _skipped), ("cancelled", cancellation.IsCancellationRequested));
+                    ("skipped", _skipped), ("cancelled", cancellation.IsCancellationRequested),
+                    // Times are added up over all workers, so they can exceed duration_ms.
+                    ("read_mb", Mb(m.Io.Read.Bytes)), ("read_ms", m.Io.Read.Ms), ("read_mb_s", m.Io.Read.MBpsForLog),
+                    ("open_ms", m.Io.Open.Ms), ("list_ms", m.Io.List.Ms), ("hash_ms", m.Hash.Ms), ("load_ms", m.Load.Ms),
+                    ("render_ms", m.Render.Ms), ("encode_ms", m.Encode.Ms), ("write_ms", m.Write.Ms), ("stalls", Interlocked.Read(ref m.Stalls)));
                 _current = null;
                 _active = false;
                 _paused = false;
@@ -252,6 +289,34 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 Idle?.Invoke();
             }
         }
+    }
+
+    private static double Mb(long bytes) => Math.Round(bytes / 1048576.0, 1);
+
+    /// <summary>Every minute while drawing: how far it has got and how fast it is going now.</summary>
+    private async Task ReportProgressAsync(long started, CancellationToken stop)
+    {
+        using var timer = new PeriodicTimer(ProgressEvery);
+        long lastDone = 0, lastRead = 0;
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                var m = _metrics;
+                int done, failed, skipped, total;
+                bool paused;
+                lock (_gate) (done, failed, skipped, total, paused) = (_done, _failed, _skipped, _total, _paused);
+                long read = m.Io.Read.Bytes;
+                double minutes = ProgressEvery.TotalMinutes;
+                Log.Info("thumbs.progress", ("elapsed_s", (long)Stopwatch.GetElapsedTime(started).TotalSeconds), ("made", done), ("failed", failed),
+                    ("skipped", skipped), ("of", total), ("per_min", Math.Round((done - lastDone) / minutes, 1)),
+                    ("read_mb_s", Math.Round((read - lastRead) / 1048576.0 / ProgressEvery.TotalSeconds, 1)), ("paused", paused),
+                    ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()),
+                    ("read_ms", m.Io.Read.Ms), ("load_ms", m.Load.Ms), ("render_ms", m.Render.Ms), ("encode_ms", m.Encode.Ms), ("write_ms", m.Write.Ms));
+                (lastDone, lastRead) = (done, read);
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void ForgetMissingImages()
@@ -320,6 +385,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 continue;
             }
             BackgroundWork.Current = limits;   // seen by the archive reader too
+            IoMeter.Current = _metrics.Io;     // so are the reads to measure
             if (!await WaitIfPausedAsync(cancellation)) return;
 
             // Help draw what archives have already read, before starting anything new.
@@ -424,9 +490,12 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         var stream = new ArchiveStream();
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         var limits = BackgroundWork.Current;
+        var io = _metrics.Io;
+        long extractMs = 0;   // reading the whole archive, including waiting for the models to be drawn (only 2 wait at a time)
         var producer = Task.Run(async () =>
         {
             BackgroundWork.Current = limits;
+            IoMeter.Current = io;
             long last = Stopwatch.GetTimestamp();
             try
             {
@@ -446,6 +515,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             }
             finally
             {
+                extractMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 stream.Models.Writer.TryComplete();
             }
         }, CancellationToken.None);
@@ -476,7 +546,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             foreach (var job in notRead) Stale(job, "the file is no longer where the scan found it");
         }
         Log.Info("thumbs.archive", ("archive", group.Archive), ("models", group.Jobs.Count), ("read", stream.Delivered.Count),
-            ("ms", (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+            ("ms", (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds), ("extract_ms", extractMs));
     }
 
     private async Task DrawReadAsync(int slot, ReadModel model)
@@ -540,7 +610,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         long Ms() => (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         void Fail(ThumbnailJobRow failed, string message) => FailJob(failed, message, Ms());
 
-        if (BackgroundWork.Run(() => Convert.ToHexStringLower(SHA256.HashData(bytes))) != job.Sha256)
+        var m = _metrics;
+        if (m.Hash.Time(() => BackgroundWork.Run(() => Convert.ToHexStringLower(SHA256.HashData(bytes)))) != job.Sha256)
         {
             Stale(job, "the file changed since it was scanned");
             return;
@@ -589,6 +660,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 Emit();
                 return;
             }
+            long writing = Stopwatch.GetTimestamp();
             try
             {
                 await ThumbnailFiles.WriteAsync(ImagePath(job.Sha256), result.Png);   // never a half-written image under the real name
@@ -599,8 +671,14 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 return;
             }
             _db.RecordThumbnail(job.Sha256, ThumbnailState.Ok, Look.RenderVersion, Look.ThumbnailSize);
+            m.Write.Add(Stopwatch.GetTimestamp() - writing);
         }
-        Log.Info("thumb.ok", ("path", job.Path), ("sha256", job.Sha256), ("ms", Ms()), ("read_ms", readMs), ("size", job.Size), ("triangles", result.Triangles));
+        m.Load.Add(result.LoadTime.Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond);
+        m.Render.Add(result.RenderTime.Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond);
+        m.Encode.Add(result.EncodeTime.Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond);
+        Log.Info("thumb.ok", ("path", job.Path), ("sha256", job.Sha256), ("ms", Ms()), ("read_ms", readMs), ("size", job.Size), ("triangles", result.Triangles),
+            ("load_ms", (long)result.LoadTime.TotalMilliseconds), ("render_ms", (long)result.RenderTime.TotalMilliseconds),
+            ("encode_ms", (long)result.EncodeTime.TotalMilliseconds));
         lock (_gate) _done++;
         JobDone?.Invoke(new ThumbnailJobDone(job.Sha256, ThumbnailState.Ok, null));
         Emit();

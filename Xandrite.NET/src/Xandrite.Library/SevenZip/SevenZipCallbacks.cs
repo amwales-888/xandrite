@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static Xandrite.Library.SevenZip.SevenZipNative;
@@ -159,6 +160,8 @@ internal sealed unsafe class InStream : NativeObject
 /// </summary>
 internal sealed unsafe class OpenCallback : NativeObject
 {
+    private readonly IoMeter? _meter = IoMeter.Current;
+
     private static readonly void** OpenTable = Vtable(
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetTotal,
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetCompleted);
@@ -213,7 +216,9 @@ internal sealed unsafe class OpenCallback : NativeObject
             string file = Path.GetFileName(ReadWide(name));
             string path = Path.Combine(Path.GetDirectoryName(self._firstVolume) ?? "", file);
             if (file.Length == 0 || !File.Exists(path)) return S_FALSE;   // no such volume: 7-Zip reports the set as incomplete
-            var volume = new InStream(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16));
+            Stream input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
+            if (self._meter is { } meter) input = new MeteredStream(input, meter, path);   // 7-Zip's thread: use the meter of whoever opened the set
+            var volume = new InStream(input);
             self._volumes.Add(volume);
             *stream = volume.Pointer(IID_IInStream);
             return S_OK;
@@ -401,7 +406,7 @@ internal sealed class SplitStream : Stream
 
     public SplitStream(IReadOnlyList<string> paths)
     {
-        _parts = paths.Select(p => new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16)).ToArray();
+        _parts = paths.Select(p => IoMeter.OpenFile(p, 1 << 16)).ToArray();
         _starts = new long[_parts.Length + 1];
         for (int i = 0; i < _parts.Length; i++) _starts[i + 1] = _starts[i] + _parts[i].Length;
     }
