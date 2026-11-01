@@ -64,7 +64,6 @@ public static class FilterOptions
         new("Any rating", RatingFilter.Any),
         new("Unrated", RatingFilter.Unrated),
         new("Rated", RatingFilter.Rated),
-        new("0 stars", RatingFilter.Zero),
         new("★ and up", RatingFilter.AtLeast1),
         new("★★ and up", RatingFilter.AtLeast2),
         new("★★★ and up", RatingFilter.AtLeast3),

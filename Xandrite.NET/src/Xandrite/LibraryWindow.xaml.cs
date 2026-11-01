@@ -82,10 +82,10 @@ public partial class LibraryWindow : Window
 
         var rate = new MenuItem { Header = "Rate" + many };
         rate.Items.Add(Item("Unrated", () => _vm.Rate(selection, null)));
-        for (int stars = 0; stars <= 5; stars++)
+        for (int stars = 5; stars >= 1; stars--)
         {
             int value = stars;
-            string label = stars == 0 ? "0 stars" : new string('★', stars) + new string('☆', 5 - stars);
+            string label = new string('★', stars) + new string('☆', 5 - stars);
             rate.Items.Add(Item(label, () => _vm.Rate(selection, value)));
         }
         menu.Items.Add(rate);

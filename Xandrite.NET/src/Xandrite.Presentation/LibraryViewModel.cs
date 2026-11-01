@@ -143,7 +143,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand DownloadSelectedCommand { get; }
     public RelayCommand CopySelectedPathsCommand { get; }
 
-    /// <summary>Rates the selection; the parameter is "0" to "5", or empty for unrated.</summary>
+    /// <summary>Rates the selection; the parameter is "1" to "5", or empty for unrated.</summary>
     public RelayCommand RateSelectedCommand { get; }
     public RelayCommand SelectAllCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }

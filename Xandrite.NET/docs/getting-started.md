@@ -184,7 +184,7 @@ which way ("A to Z", "Newest first"...). When sorting by date, each tile shows i
 
 Click **Filters** in the toolbar to narrow the grid further:
 
-- **Rating:** any, unrated, rated, 0 stars, at least one to four stars, or five stars.
+- **Rating:** any, unrated, rated, at least one to four stars, or five stars.
 - **Views:** **All**; **Custom**, models whose thumbnail is drawn from a view you saved in the viewer (the tiles with
   the *custom view* badge); or **Default**, models still using the automatic view. Handy for finding the models you
   haven't given a better angle yet.
@@ -226,7 +226,7 @@ offers **Download…**, **Rate** and **Copy paths** for all of them, plus **Sele
 
 ### Rating
 
-Give models from zero to five stars, to find your favourites later (sort or filter by **Rating**):
+Give models one to five stars, to find your favourites later (sort or filter by **Rating**):
 
 - Select one or more models and press **1** to **5**. Press **0** to clear the rating.
 - Or right-click and choose **Rate**.
