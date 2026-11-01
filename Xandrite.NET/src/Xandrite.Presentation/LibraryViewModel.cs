@@ -29,6 +29,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private readonly ILibraryShell _shell;
     private readonly IUiDispatcher _ui;
     private readonly ILog _log;
+    private readonly ILog _statistics;
 
     private List<TileViewModel> _tiles = [];
     private Dictionary<string, List<TileViewModel>> _bySha = [];
@@ -69,9 +70,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private readonly Stopwatch _lastThumbStatus = Stopwatch.StartNew();
     private bool _thumbStatusQueued;
 
-    public LibraryViewModel(LibraryDatabase db, LibraryLocation location, ThumbnailQueue queue, ILibraryShell shell, IUiDispatcher ui, ModelSource? source = null, ILog? log = null)
+    public LibraryViewModel(LibraryDatabase db, LibraryLocation location, ThumbnailQueue queue, ILibraryShell shell, IUiDispatcher ui, ModelSource? source = null, ILog? log = null, ILog? statistics = null)
     {
         _log = log ?? NullLog.Instance;
+        _statistics = statistics ?? NullLog.Instance;
         _db = db;
         _location = location;
         _queue = queue;
@@ -96,6 +98,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         ToggleDirectionCommand = new RelayCommand(() => Descending = !Descending);
         OpenDataFolderCommand = new RelayCommand(() => _shell.Reveal(_location.DataFolder, selectFile: false));
         ShowLogCommand = new RelayCommand(ShowLog);
+        ShowStatisticsCommand = new RelayCommand(ShowStatistics);
 
         _queue.JobDone += done => _ui.Post(() => OnThumbnailDone(done));
         _queue.Progress += _ => QueueThumbnailStatus();
@@ -118,6 +121,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             _includeSubfolders = _db.GetSetting("ui.subfolders", "1") == "1";
             _showMissing = _db.GetSetting("ui.missing") == "1";
             _queue.Speed = WorkLimits.Parse(_db.GetSetting(ThumbnailSpeedSetting));
+            ArchiveFiles.ReadBufferBytes = int.TryParse(_db.GetSetting(ArchiveReadSetting), NumberStyles.Integer, CultureInfo.InvariantCulture, out int kb)
+                ? kb * 1024 : ArchiveFiles.DefaultReadBufferBytes;
+            ApplyDeveloperOptions();
             if (double.TryParse(_db.GetSetting("ui.tileSize"), NumberStyles.Float, CultureInfo.InvariantCulture, out double size))
                 _tileSize = Math.Clamp(size, MinTileSize, MaxTileSize);
         }
@@ -155,6 +161,82 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand OpenDataFolderCommand { get; }
     public RelayCommand ShowLogCommand { get; }
 
+    public RelayCommand ShowStatisticsCommand { get; }
+
+    /* ---------- developer options (Preferences → Developer, shown only with --developer) ---------- */
+
+    /// <summary>Started with --developer: the Developer menu is shown and its saved options are in force.</summary>
+    public bool DeveloperMode { get; init; }
+
+    public const string DevArchivesSetting = "dev.log.archives", DevFilesSetting = "dev.log.files",
+        DevThreadsSetting = "dev.log.threads", DevThreadIdsSetting = "dev.log.thread_ids", DevArchiveIoSetting = "dev.log.archive_io";
+
+    public bool LogArchives { get => DevLog.Archives; set => SetDeveloperOption(DevArchivesSetting, value, v => DevLog.Archives = v); }
+    public bool LogArchiveIo { get => DevLog.ArchiveIo; set => SetDeveloperOption(DevArchiveIoSetting, value, v => DevLog.ArchiveIo = v); }
+    public bool LogFiles { get => DevLog.Files; set => SetDeveloperOption(DevFilesSetting, value, v => DevLog.Files = v); }
+    public bool LogThreads { get => DevLog.Threads; set => SetDeveloperOption(DevThreadsSetting, value, v => DevLog.Threads = v); }
+
+    public bool LogThreadIds
+    {
+        get => _log is FileLog { ThreadIds: true };
+        set => SetDeveloperOption(DevThreadIdsSetting, value, v => { if (_log is FileLog file) file.ThreadIds = v; });
+    }
+
+    private void SetDeveloperOption(string key, bool value, Action<bool> apply, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        apply(value);
+        _db.SetSetting(key, value ? "1" : "0");
+        _log.Info("setting.changed", ("name", key), ("value", value));
+        OnPropertyChanged(name);
+    }
+
+    public const string ArchiveReadSetting = "io.archive_read_kb";
+
+    /// <summary>
+    /// Bytes read from an archive file at a time (Developer → Archive read size). Unlike the logging switches this is
+    /// in force however the app was started; only the menu needs --developer.
+    /// </summary>
+    public int ArchiveReadKb
+    {
+        get => ArchiveFiles.ReadBufferBytes / 1024;
+        set
+        {
+            if (value == ArchiveReadKb) return;
+            ArchiveFiles.ReadBufferBytes = value * 1024;
+            _db.SetSetting(ArchiveReadSetting, ArchiveReadKb.ToString(CultureInfo.InvariantCulture));
+            _log.Info("setting.changed", ("name", ArchiveReadSetting), ("value", ArchiveReadKb));
+            OnPropertyChanged();
+            foreach (var kb in ArchiveReadChoices) OnPropertyChanged("ArchiveRead" + kb);
+        }
+    }
+
+    public static readonly int[] ArchiveReadChoices = [64, 256, 1024, 4096, 12288, 16384, 32768];
+
+    // One per menu item, so the menu ticks the current size (unticking one does nothing).
+    public bool ArchiveRead64 { get => ArchiveReadKb == 64; set { if (value) ArchiveReadKb = 64; else OnPropertyChanged(); } }
+    public bool ArchiveRead256 { get => ArchiveReadKb == 256; set { if (value) ArchiveReadKb = 256; else OnPropertyChanged(); } }
+    public bool ArchiveRead1024 { get => ArchiveReadKb == 1024; set { if (value) ArchiveReadKb = 1024; else OnPropertyChanged(); } }
+    public bool ArchiveRead4096 { get => ArchiveReadKb == 4096; set { if (value) ArchiveReadKb = 4096; else OnPropertyChanged(); } }
+    public bool ArchiveRead12288 { get => ArchiveReadKb == 12288; set { if (value) ArchiveReadKb = 12288; else OnPropertyChanged(); } }
+    public bool ArchiveRead16384 { get => ArchiveReadKb == 16384; set { if (value) ArchiveReadKb = 16384; else OnPropertyChanged(); } }
+    public bool ArchiveRead32768 { get => ArchiveReadKb == 32768; set { if (value) ArchiveReadKb = 32768; else OnPropertyChanged(); } }
+
+    /// <summary>Puts the saved developer options in force: only in developer mode, so they never run unseen.</summary>
+    private void ApplyDeveloperOptions()
+    {
+        if (!DeveloperMode) return;   // the options stay off, and the shared developer log is left alone
+        DevLog.Log = _log;
+        bool On(string key) => DeveloperMode && _db.GetSetting(key) == "1";
+        DevLog.Archives = On(DevArchivesSetting);
+        DevLog.ArchiveIo = On(DevArchiveIoSetting);
+        DevLog.Files = On(DevFilesSetting);
+        DevLog.Threads = On(DevThreadsSetting);
+        if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
+        if (DeveloperMode)
+            _log.Info("developer.options", ("archives", DevLog.Archives), ("archive_io", DevLog.ArchiveIo), ("files", DevLog.Files), ("threads", DevLog.Threads),
+                ("thread_ids", LogThreadIds));
+    }
+
     /// <summary>New versions of the app (set by the app; the status bar and the Preferences menu show it).</summary>
     public UpdateViewModel? Updates { get; set; }
 
@@ -164,6 +246,14 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _log.Flush();
         if (_log.Path is { } path && File.Exists(path)) _shell.OpenFile(path);
         else _shell.ShowMessage("Log file", "There is no log file yet.");
+    }
+
+    /// <summary>Preferences → Show statistics: one line for each scan and each thumbnail run, oldest first.</summary>
+    public void ShowStatistics()
+    {
+        _statistics.Flush();
+        if (_statistics.Path is { } path && File.Exists(path)) _shell.OpenFile(path);
+        else _shell.ShowMessage("Statistics", "Nothing has been recorded yet. A line is added each time a scan or a thumbnail run finishes.");
     }
 
     /* ---------- the filter bar ---------- */
@@ -971,8 +1061,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (IsScanning || roots.Count == 0) return;
         IsScanning = true;
         var cancel = _scanCancel = new CancellationTokenSource();
-        var scanner = new LibraryScanner(_db, _source) { Log = _log };
+        var scanner = new LibraryScanner(_db, _source) { Log = _log, Statistics = _statistics };
         var scanClock = Stopwatch.StartNew();
+        var scanStarted = DateTimeOffset.Now;
         if (roots.Count > 1) _log.Info("rescan.start", ("folders", roots.Count));
         var summaries = new List<ScanSummary>();
         var throttle = Stopwatch.StartNew();
@@ -1008,6 +1099,16 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (roots.Count > 1)
             _log.InfoOrWarn(cancel.IsCancellationRequested || summaries.Any(s => s.Errors > 0), "rescan.end", ("duration_ms", scanClock.ElapsedMilliseconds),
                 ("folders", roots.Count), ("cancelled", cancel.IsCancellationRequested));
+        if (roots.Count > 1)
+        {
+            long ms = scanClock.ElapsedMilliseconds;
+            _statistics.InfoOrWarn(cancel.IsCancellationRequested || summaries.Any(s => s.Errors > 0), "rescan",
+                ("result", cancel.IsCancellationRequested ? "cancelled" : "finished"), ("folders", roots.Count),
+                ("started", Stat.Time(scanStarted)), ("ended", Stat.Time(DateTimeOffset.Now)), ("took", Stat.Took(ms)), ("duration_s", Stat.Seconds(ms)),
+                ("files", summaries.Sum(s => s.Found)), ("unchanged", summaries.Sum(s => s.Reused)), ("read", summaries.Sum(s => s.Hashed)),
+                ("new", summaries.Sum(s => s.Added)), ("moved", summaries.Sum(s => s.Moved)), ("missing", summaries.Sum(s => s.Missing)),
+                ("problems", summaries.Sum(s => s.Errors)), ("archive_read_kb", ArchiveReadKb), ("version", Stat.Version));
+        }
         ScanText = Describe(summaries, cancel.IsCancellationRequested);
         RefreshAll();
         _queue.Start();   // thumbnails for anything new
