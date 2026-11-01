@@ -188,6 +188,9 @@ Click **Filters** in the toolbar to narrow the grid further:
 - **Views:** **All**; **Custom**, models whose thumbnail is drawn from a view you saved in the viewer (the tiles with
   the *custom view* badge); or **Default**, models still using the automatic view. Handy for finding the models you
   haven't given a better angle yet.
+- **Copies:** **Only models with copies** shows just the models found in more than one place (a loose file and the
+  same model inside a zip, say). Each model's copies are listed side by side, the ones taking the most space first,
+  which makes tidying up duplicates easy. The status bar's "57 with copies" is a link that turns this on.
 - **Date:** choose **Modified** or **Added**, then a period: the last 24 hours, 7 days, 30 days or year, or more than a
   year ago.
 - **File size:** under 100 KB, 100 KB – 1 MB, 1 – 10 MB, 10 – 50 MB, over 50 MB.
@@ -250,8 +253,8 @@ Right-click a tile, or a selection of tiles, for these actions:
   ordinary files. Existing files are never overwritten: a second `gear.stl` is saved as `gear (2).stl`.
 - **Copy path** / **Copy SHA-256:** copies to the clipboard, one line per model.
 - **Rate:** sets the rating of every selected model.
-- **Find other copies of this model:** shows every place the same model is found, whatever its name. Handy for
-  tidying up duplicates.
+- **Find other copies of this model:** shows every place the same model is found, whatever its name. To see every
+  model that has copies at once, use **Filters → Copies** (or click "with copies" in the status bar).
 - **Regenerate thumbnail:** draws the thumbnail again.
 - **Revert to automatic view:** forgets a view saved in the viewer, and redraws the thumbnail from the standard
   angle.

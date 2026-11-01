@@ -39,6 +39,30 @@ public class DatabaseTests
     }
 
     [Fact]
+    public void TheCopiesFilterListsModelsFoundTwiceTogetherTheBiggestFirst()
+    {
+        var (db, root) = Build();
+        void Add(string rel, string sha, long size, int missing = 0) => db.Locked(c =>
+        {
+            c.Execute("INSERT OR IGNORE INTO models(sha256,size,format,first_seen_at) VALUES (?,?,?,?)", sha, size, "stl", 0);
+            c.Execute("INSERT INTO locations(path,root,sha256,size,mtime_ms,last_seen_scan,added_scan,missing) VALUES (?,?,?,?,?,?,?,?)",
+                root + S + rel, root, sha, size, 0, 1, 1, missing);
+        });
+        string small = new('0', 64), big = new('e', 64), gone = new('3', 64);
+        Add($"z{S}a-copy.stl", small, 10);                  // a.stl's content again
+        Add("big.stl", big, 500);
+        Add($"other{S}big again.stl", big, 500);
+        Add($"z{S}d-copy.stl", gone, 10);                   // d.stl is missing, so this is its only present copy
+
+        var page = db.List(new ListQuery { CopiesOnly = true, IncludeMissing = false });
+        Assert.Equal(4, page.Total);
+        Assert.Equal(new[] { big, big, small, small }, page.Rows.Select(r => r.Sha256));   // copies together, biggest first
+        Assert.Equal(new[] { "a.stl", $"z{S}a-copy.stl" }, page.Rows.Skip(2).Select(r => r.RelativePath).Order(StringComparer.Ordinal));
+        Assert.Equal(2, db.GetStats().DuplicateGroups);                                    // the status bar counts the same groups
+        Assert.Equal(2, db.List(new ListQuery { CopiesOnly = true, Search = "big" }).Total);
+    }
+
+    [Fact]
     public void FolderFilterDoesNotMatchASiblingThatSharesANamePrefix()
     {
         var (db, root) = Build();

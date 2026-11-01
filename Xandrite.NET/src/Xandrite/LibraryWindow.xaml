@@ -340,6 +340,11 @@
                             <ListBox ItemsSource="{Binding ViewOptions}" SelectedItem="{Binding ViewFilter}" Style="{StaticResource ChoiceList}"
                                      AutomationProperties.Name="Views" />
 
+                            <TextBlock Text="COPIES" Style="{StaticResource SectionLabel}" Margin="0,14,0,8"
+                                       ToolTip="Models found in more than one place. Each model's copies are listed together, the biggest first." />
+                            <ListBox ItemsSource="{Binding CopiesOptions}" SelectedItem="{Binding CopiesFilter}" Style="{StaticResource ChoiceList}"
+                                     AutomationProperties.Name="Copies" />
+
                             <TextBlock Text="DATE" Style="{StaticResource SectionLabel}" Margin="0,14,0,8" />
                             <DockPanel>
                                 <Border DockPanel.Dock="Left" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Margin="0,0,8,0">
@@ -517,6 +522,10 @@
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="{Binding StatsText}" VerticalAlignment="Center" />
+                    <TextBlock Text=" · " VerticalAlignment="Center" Visibility="{Binding CopiesText, Converter={StaticResource IfText}}" />
+                    <Button Content="{Binding CopiesText}" Style="{StaticResource LinkButton}" FontSize="12" Command="{Binding ShowCopiesCommand}"
+                            ToolTip="Show only the models found in more than one place"
+                            Visibility="{Binding CopiesText, Converter={StaticResource IfText}}" />
                     <TextBlock Text="{Binding ListText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" />
                     <TextBlock Text="{Binding ScanText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" TextTrimming="CharacterEllipsis" MaxWidth="520" />
                     <Button Content="Cancel" Padding="8,1" Margin="6,0,0,0" Command="{Binding CancelScanCommand}"

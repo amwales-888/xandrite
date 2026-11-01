@@ -50,6 +50,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private AgeBasisOption _ageBasis = FilterOptions.AgeBases[0];
     private RatingFilterOption _ratingFilter = FilterOptions.Ratings[0];
     private ViewFilterOption _viewFilter = FilterOptions.Views[0];
+    private CopiesFilterOption _copiesFilter = FilterOptions.Copies[0];
+    private string _copiesText = "";
     private double _tileSize = 180;
 
     private long _total;
@@ -85,6 +87,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         RetryFailedCommand = new RelayCommand(RetryFailed);
         ClearFiltersCommand = new RelayCommand(ClearFilters);
         ClearAllFiltersCommand = new RelayCommand(ClearAllFilters);
+        ShowCopiesCommand = new RelayCommand(ShowCopies);
         DownloadSelectedCommand = new RelayCommand(() => _ = DownloadAsync(SelectedTiles), () => _selectedCount > 0);
         CopySelectedPathsCommand = new RelayCommand(() => CopyPaths(SelectedTiles), () => _selectedCount > 0);
         RateSelectedCommand = new RelayCommand(p => Rate(p is null or "" ? null : int.Parse(p.ToString()!, CultureInfo.InvariantCulture)));
@@ -140,6 +143,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand RetryFailedCommand { get; }
     public RelayCommand ClearFiltersCommand { get; }
     public RelayCommand ClearAllFiltersCommand { get; }
+    public RelayCommand ShowCopiesCommand { get; }
     public RelayCommand DownloadSelectedCommand { get; }
     public RelayCommand CopySelectedPathsCommand { get; }
 
@@ -170,6 +174,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<AgeBasisOption> AgeBasisOptions => FilterOptions.AgeBases;
     public IReadOnlyList<RatingFilterOption> RatingOptions => FilterOptions.Ratings;
     public IReadOnlyList<ViewFilterOption> ViewOptions => FilterOptions.Views;
+    public IReadOnlyList<CopiesFilterOption> CopiesOptions => FilterOptions.Copies;
 
     public string SearchText
     {
@@ -287,7 +292,23 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         set { if (value is not null && Set(ref _viewFilter, value)) FiltersChanged(); }
     }
 
-    public bool FiltersActive => _sizeFilter.Min is not null || _sizeFilter.Max is not null
+    /// <summary>Only models found in more than one place, each model's copies together, the biggest first.</summary>
+    public CopiesFilterOption CopiesFilter
+    {
+        get => _copiesFilter;
+        set { if (value is not null && Set(ref _copiesFilter, value)) FiltersChanged(); }
+    }
+
+    /// <summary>The status bar's "57 with copies", a link that turns the copies filter on.</summary>
+    public string CopiesText
+    {
+        get => _copiesText;
+        private set => Set(ref _copiesText, value);
+    }
+
+    public void ShowCopies() => CopiesFilter = FilterOptions.Copies[1];
+
+    public bool FiltersActive => _copiesFilter.CopiesOnly || _sizeFilter.Min is not null || _sizeFilter.Max is not null
         || _ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null || _ratingFilter.Value != Library.RatingFilter.Any
         || _viewFilter.Value != Library.ViewFilter.Any;
 
@@ -308,6 +329,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 chips.Add(Chip(_ratingFilter.Label, "rating", () => RatingFilter = FilterOptions.Ratings[0]));
             if (_ageFilter.NewerThan is not null || _ageFilter.OlderThan is not null)
                 chips.Add(Chip(DateChipLabel(_ageBasis, _ageFilter), "date", () => AgeFilter = FilterOptions.Ages[0]));
+            if (_copiesFilter.CopiesOnly)
+                chips.Add(Chip("With copies", "copies", () => CopiesFilter = FilterOptions.Copies[0]));
             if (_viewFilter.Value != Library.ViewFilter.Any)
                 chips.Add(Chip(_viewFilter.Value == Library.ViewFilter.Custom ? "Custom views" : "Default views", "view",
                     () => ViewFilter = FilterOptions.Views[0]));
@@ -371,7 +394,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _ageFilter = FilterOptions.Ages[0];
         _ratingFilter = FilterOptions.Ratings[0];
         _viewFilter = FilterOptions.Views[0];
+        _copiesFilter = FilterOptions.Copies[0];
         OnPropertyChanged(nameof(ViewFilter));
+        OnPropertyChanged(nameof(CopiesFilter));
         OnPropertyChanged(nameof(SizeFilter));
         OnPropertyChanged(nameof(AgeFilter));
         OnPropertyChanged(nameof(RatingFilter));
@@ -528,6 +553,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         AgeBasis = _ageBasis.Value,
         Rating = _ratingFilter.Value,
         View = _viewFilter.Value,
+        CopiesOnly = _copiesFilter.CopiesOnly,
     };
 
     private static bool NaturallyAscending(SortOrder sort) => sort is SortOrder.Name or SortOrder.Path;
@@ -1008,8 +1034,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         LoadTree();
         var stats = _db.GetStats();
         StatsText = $"{stats.Files:N0} files · {stats.UniqueModels:N0} models" +
-                    (stats.DuplicateGroups > 0 ? $" · {stats.DuplicateGroups:N0} with copies" : "") +
                     (stats.Missing > 0 ? $" · {stats.Missing:N0} missing" : "");
+        CopiesText = stats.DuplicateGroups > 0 ? $"{stats.DuplicateGroups:N0} with copies" : "";
         OnPropertyChanged(nameof(Roots));
         Reload();
     }
