@@ -89,8 +89,8 @@ If the app is closed during the image copy, it carries on at the next start.
 It works like the Electron app's window:
 - **Folder tree** on the left, with "All files" at the top. Right-click a folder to rescan it, show it in Explorer, or
   remove it from the library.
-- **Toolbar:** search (part of a path or a SHA-256), **Filters** (a panel: rating, views (custom or default), date modified or
-  added, file size, show missing; the button shows how many are on), **Sort** (name, folder and name, date modified, date added, size,
+- **Toolbar:** search (part of a path or a SHA-256), **Filters** (a panel: rating, views (custom or default), copies (models
+  found more than once, grouped), date modified or added, file size, show missing; the button shows how many are on), **Sort** (name, folder and name, date modified, date added, size,
   rating) with an arrow that shows and reverses the direction, the thumbnail size slider, and Preferences (the gear).
 - **Under the toolbar:** while models are selected, a selection bar (Download…, Rate, Copy paths, Select all, Clear
   selection); otherwise, while filters are on, a chip for each (click to remove) and Clear all. Nothing when neither.

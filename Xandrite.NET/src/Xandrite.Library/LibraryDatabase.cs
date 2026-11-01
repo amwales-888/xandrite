@@ -294,6 +294,7 @@ public sealed class LibraryDatabase : IDisposable
         if (RatingSql(query.Rating) is { } rating) where.Add(rating);
         if (query.View == ViewFilter.Custom) where.Add("EXISTS (SELECT 1 FROM views cv WHERE cv.sha256 = l.sha256)");
         if (query.View == ViewFilter.Default) where.Add("NOT EXISTS (SELECT 1 FROM views cv WHERE cv.sha256 = l.sha256)");
+        if (query.CopiesOnly) where.Add("(SELECT COUNT(*) FROM locations cp WHERE cp.sha256 = l.sha256 AND cp.missing = 0) > 1");
 
         string clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
         var filterArgs = args.ToArray();
@@ -314,7 +315,7 @@ public sealed class LibraryDatabase : IDisposable
                 LEFT JOIN views v ON v.sha256 = l.sha256
                 LEFT JOIN ratings r ON r.sha256 = l.sha256
                 {clause}
-                ORDER BY {SortSql(query.Sort, query.Ascending)}
+                ORDER BY {(query.CopiesOnly ? "l.size DESC, l.sha256, " : "")}{SortSql(query.Sort, query.Ascending)}
                 LIMIT ? OFFSET ?
                 """, ToRow, pageArgs);
             return new ListPage(total, rows);

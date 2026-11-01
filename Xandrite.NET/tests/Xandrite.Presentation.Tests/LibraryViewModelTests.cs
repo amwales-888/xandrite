@@ -275,6 +275,27 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task TheCopiesFilterAndTheStatusBarLinkShowModelsFoundTwice()
+    {
+        var f = new Fixture(files: 4);
+        await using var cleanup = f;
+        File.Copy(Path.Combine(f.Models, "m00.stl"), Path.Combine(f.Models, "sub", "copy of m00.stl"));
+        await f.AddModelsFolder();
+        Assert.Equal("1 with copies", f.Vm.CopiesText);
+        Assert.False(f.Vm.StatsText.Contains("copies"));   // shown as its own link
+
+        f.Vm.ShowCopiesCommand.Execute(null);               // the status bar link
+        Assert.True(f.Vm.CopiesFilter.CopiesOnly);
+        Assert.Equal(new[] { "copy of m00.stl", "m00.stl" }, f.Vm.Tiles.Select(t => t.Name).Order());
+        Assert.Equal("With copies", Assert.Single(f.Vm.ActiveFilters).Label);
+        Assert.Equal(1, f.Vm.ActiveFilterCount);
+
+        f.Vm.ClearAllFiltersCommand.Execute(null);
+        Assert.False(f.Vm.CopiesFilter.CopiesOnly);
+        Assert.Equal(5, f.Vm.Total);
+    }
+
+    [Fact]
     public void DateChipsReadAsAPhrase()
     {
         var modified = FilterOptions.AgeBases.Single(b => b.Value == AgeBasis.Modified);

@@ -15,6 +15,8 @@ public sealed record RatingFilterOption(string Label, RatingFilter Value);
 
 public sealed record ViewFilterOption(string Label, ViewFilter Value);
 
+public sealed record CopiesFilterOption(string Label, bool CopiesOnly);
+
 /// <summary>A filter that is on, shown as a chip under the toolbar; its button turns that one filter off.</summary>
 public sealed record FilterChip(string Label, string RemoveLabel, RelayCommand Remove);
 
@@ -76,5 +78,11 @@ public static class FilterOptions
         new("All", ViewFilter.Any),
         new("Custom", ViewFilter.Custom),
         new("Default", ViewFilter.Default),
+    ];
+
+    public static IReadOnlyList<CopiesFilterOption> Copies { get; } =
+    [
+        new("All", false),
+        new("Only models with copies", true),
     ];
 }

@@ -21,9 +21,8 @@
 Tool, set the timer (the clock icon) to 5 seconds and click **New**. Then open the menu within those 5 seconds and wait:
 the screen freezes with the menu still open, and you can select the area.
 
-**Find other copies:** the sample models include a copy (`spur-gear-24t.stl`, also in `Mechanical\Spares`), so adding
-`Sample Models` as a second folder gives one to show. In your own library, sorting by name and looking for a name
-that repeats is another way.
+**Find other copies:** click "with copies" in the status bar (or **Filters → Copies**) to list every model that has
+copies, then right-click one of them and choose *Find other copies of this model*.
 
 When adding a missing image, put its line back in `getting-started.md`. Section 8 (right-click actions) is the place for
 06 and 07, and section 10 (Preferences) for 10.

@@ -52,6 +52,12 @@ public sealed record ListQuery
     public AgeBasis AgeBasis { get; init; } = AgeBasis.Modified;
     public RatingFilter Rating { get; init; } = RatingFilter.Any;
     public ViewFilter View { get; init; } = ViewFilter.Any;
+
+    /// <summary>
+    /// Only models found in more than one place (present copies, as the status bar counts them). The copies of each
+    /// model are listed together, the groups that take the most space first.
+    /// </summary>
+    public bool CopiesOnly { get; init; }
 }
 
 public enum ThumbnailState { Pending, Ok, Failed }
