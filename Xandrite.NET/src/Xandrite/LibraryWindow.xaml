@@ -15,6 +15,217 @@
         <local:EmptyToCollapsed x:Key="IfText" />
 
         <SolidColorBrush x:Key="Accent" Color="#2F7DE1" />
+        <SolidColorBrush x:Key="AccentDark" Color="#1A4A91" />
+        <SolidColorBrush x:Key="AccentPale" Color="#EAF1FC" />
+        <local:InverseBool x:Key="Not" />
+
+        <!-- Small caps headings in the Filters panel and above the folders -->
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#5A6B78" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- A rounded button with a light border (the selection bar's actions) -->
+        <Style x:Key="ToolButton" TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#A9B4BE" />
+            <Setter Property="Foreground" Value="#1F2A33" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#F1F5FA" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- An active filter: its label and a cross; clicking it turns that filter off -->
+        <Style x:Key="Chip" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="BorderBrush" Value="#C3D3EA" />
+            <Setter Property="Padding" Value="11,0,9,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Box" Background="White" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="14" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#F1F5FA" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Text that acts as a button ("Clear all", "Select all 214") -->
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#245FB8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock x:Name="Text" Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Text" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Text" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A borderless button holding an icon (the order arrow) -->
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Background" Value="#F6F8F9" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="0,5,5,0">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#E3EAF2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The Filters button: pale blue while filters are on, solid blue while its panel is open -->
+        <Style x:Key="FiltersToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="#1F2A33" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Box" Background="White" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Padding="12,0">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding HasActiveFilters}" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentPale}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentDark}" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentDark}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Rating choices in the Filters panel: a wrap of pills, the chosen one blue -->
+        <Style x:Key="ChoiceList" TargetType="ListBox">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Pill" Background="White" BorderBrush="#C9D1D8" BorderThickness="1" CornerRadius="14"
+                                            Padding="11,4" Margin="0,0,6,6">
+                                        <TextBlock x:Name="Label" Text="{Binding Label}" Foreground="#1F2A33" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Pill" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource AccentPale}" />
+                                            <Setter TargetName="Pill" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource AccentDark}" />
+                                        </Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True">
+                                            <Setter TargetName="Pill" Property="BorderBrush" Value="{StaticResource AccentDark}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modified / Added: two halves of one control -->
+        <Style x:Key="Segment" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Half" Background="White" Padding="12,0" Height="28" CornerRadius="5">
+                            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Foreground="#1F2A33" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Half" Property="Background" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Label" Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Label" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <SolidColorBrush x:Key="SelectedTile" Color="#E3EEFC" />
 
         <!-- One thumbnail. Sizes come from the window's view model, so the slider resizes every tile. -->
@@ -79,27 +290,120 @@
     </Window.Resources>
 
     <DockPanel>
-        <!-- ===== Top bar: search, order, size, preferences ===== -->
-        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#D5DBE0" BorderThickness="0,0,0,1" Padding="10,8">
+        <!-- ===== Toolbar: search, filters, order, size, preferences ===== -->
+        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#D5DBE0" BorderThickness="0,0,0,1" Padding="14,9">
             <DockPanel LastChildFill="False">
-                <TextBlock Text="Xandrite" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0" />
-                <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <TextBox x:Name="SearchBox" Width="240" VerticalContentAlignment="Center" Padding="4,3"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="Part of a file name, a folder, or a SHA-256" />
+                <TextBlock Text="Xandrite" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0" />
 
-                <TextBlock Text="Order by" VerticalAlignment="Center" Margin="16,0,6,0" />
-                <ComboBox Width="140" ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" DisplayMemberPath="Label" />
-                <Button Content="{Binding DirectionGlyph}" Command="{Binding ToggleDirectionCommand}" Margin="4,0,0,0" Padding="8,2"
-                        ToolTip="Reverse the order" />
+                <!-- Search, with its hint inside the box -->
+                <Border Width="380" Height="32" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Background="White" Padding="9,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#5A6B78"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Grid>
+                            <TextBlock Text="Search names, folders or SHA-256" Foreground="#6B7884" VerticalAlignment="Center" IsHitTestVisible="False"
+                                       Visibility="{Binding SearchText, Converter={StaticResource IfText}, ConverterParameter=Invert}" />
+                            <TextBox x:Name="SearchBox" BorderThickness="0" Background="Transparent" VerticalContentAlignment="Center" Padding="0"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     AutomationProperties.Name="Search names, folders or SHA-256" />
+                        </Grid>
+                    </DockPanel>
+                </Border>
 
-                <TextBlock Text="Size" VerticalAlignment="Center" Margin="16,0,6,0" />
-                <Slider Width="120" VerticalAlignment="Center"
-                        Minimum="{x:Static vm:LibraryViewModel.MinTileSize}" Maximum="{x:Static vm:LibraryViewModel.MaxTileSize}"
-                        Value="{Binding TileSize}" SmallChange="8" LargeChange="32" />
+                <!-- Filters: a button with the number that are on; the panel drops from it -->
+                <ToggleButton x:Name="FiltersButton" Style="{StaticResource FiltersToggle}" Margin="10,0,0,0"
+                              IsHitTestVisible="{Binding IsOpen, ElementName=FiltersPopup, Converter={StaticResource Not}}"
+                              AutomationProperties.Name="Filters">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE71C;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" Margin="0,0,7,0" />
+                        <TextBlock Text="Filters" VerticalAlignment="Center" />
+                        <Border x:Name="FilterCount" Background="{StaticResource Accent}" CornerRadius="9" Padding="7,0" Margin="7,0,0,0" MinWidth="18"
+                                Visibility="{Binding HasActiveFilters, Converter={StaticResource Visible}}">
+                            <TextBlock Text="{Binding ActiveFilterCount}" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        </Border>
+                    </StackPanel>
+                </ToggleButton>
+                <Popup x:Name="FiltersPopup" PlacementTarget="{Binding ElementName=FiltersButton}" Placement="Bottom" VerticalOffset="6"
+                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                       IsOpen="{Binding IsChecked, ElementName=FiltersButton, Mode=TwoWay}">
+                    <Border Width="340" Background="White" BorderBrush="#C9D1D8" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,10,10">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.18" Color="#1F2A33" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <TextBlock Text="RATING" Style="{StaticResource SectionLabel}" />
+                            <ListBox ItemsSource="{Binding RatingOptions}" SelectedItem="{Binding RatingFilter}" Style="{StaticResource ChoiceList}"
+                                     AutomationProperties.Name="Rating" />
 
+                            <TextBlock Text="DATE" Style="{StaticResource SectionLabel}" Margin="0,14,0,8" />
+                            <DockPanel>
+                                <Border DockPanel.Dock="Left" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Content="Modified" IsChecked="{Binding AgeByModified}" Style="{StaticResource Segment}" GroupName="AgeBasis" />
+                                        <RadioButton Content="Added" IsChecked="{Binding AgeByAdded}" Style="{StaticResource Segment}" GroupName="AgeBasis" />
+                                    </StackPanel>
+                                </Border>
+                                <ComboBox ItemsSource="{Binding AgeOptions}" SelectedItem="{Binding AgeFilter}" DisplayMemberPath="Label" Height="30"
+                                          VerticalContentAlignment="Center" AutomationProperties.Name="When" />
+                            </DockPanel>
+
+                            <TextBlock Text="FILE SIZE" Style="{StaticResource SectionLabel}" Margin="0,14,0,8" />
+                            <ComboBox ItemsSource="{Binding SizeOptions}" SelectedItem="{Binding SizeFilter}" DisplayMemberPath="Label" Height="30"
+                                      VerticalContentAlignment="Center" AutomationProperties.Name="File size" />
+
+                            <CheckBox Content="Show missing files" IsChecked="{Binding ShowMissing}" Margin="0,14,0,0" />
+
+                            <Border BorderBrush="#E3E8EC" BorderThickness="0,1,0,0" Margin="0,14,0,0" Padding="0,10,0,0">
+                                <DockPanel>
+                                    <Button Content="Clear all" Style="{StaticResource LinkButton}" Command="{Binding ClearAllFiltersCommand}" />
+                                    <TextBlock Text="{Binding MatchText}" Foreground="#5A6B78" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
+                <!-- Order: what to sort by, and which way -->
+                <Border Height="32" BorderBrush="#A9B4BE" BorderThickness="1" CornerRadius="6" Margin="10,0,0,0" Background="White">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Sort" Foreground="#5A6B78" VerticalAlignment="Center" Margin="10,0,6,0" />
+                        <ComboBox ItemsSource="{Binding SortOptions}" SelectedItem="{Binding Sort}" DisplayMemberPath="Label" Width="130"
+                                  BorderThickness="0" Background="White" VerticalContentAlignment="Center" Margin="0,3"
+                                  AutomationProperties.Name="Sort by" />
+                        <Button Command="{Binding ToggleDirectionCommand}" ToolTip="{Binding DirectionToolTip}" Style="{StaticResource IconButton}"
+                                BorderBrush="#D5DBE0" BorderThickness="1,0,0,0" Width="34"
+                                AutomationProperties.Name="{Binding DirectionToolTip}">
+                            <TextBlock x:Name="DirectionArrow" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#3A4A56">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="&#xE74B;" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsAscending}" Value="True">
+                                                <Setter Property="Text" Value="&#xE74A;" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <!-- Thumbnail size -->
+                <StackPanel Orientation="Horizontal" Margin="14,0,0,0" ToolTip="Thumbnail size">
+                    <TextBlock Text="&#xE8B9;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="#5A6B78" VerticalAlignment="Center" />
+                    <Slider Width="96" VerticalAlignment="Center" Margin="6,0"
+                            Minimum="{x:Static vm:LibraryViewModel.MinTileSize}" Maximum="{x:Static vm:LibraryViewModel.MaxTileSize}"
+                            Value="{Binding TileSize}" SmallChange="8" LargeChange="32" AutomationProperties.Name="Thumbnail size" />
+                    <TextBlock Text="&#xE8B9;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="#5A6B78" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Preferences: the gear -->
                 <Menu DockPanel.Dock="Right" Background="Transparent" VerticalAlignment="Center">
-                    <MenuItem Header="Preferences ▾" Padding="8,3">
+                    <MenuItem Padding="9,6" ToolTip="Preferences" AutomationProperties.Name="Preferences">
+                        <MenuItem.Header>
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#3A4A56" />
+                        </MenuItem.Header>
                         <MenuItem Header="Manage folders…" Click="OnManageFolders" />
                         <MenuItem Header="Add folder…" Command="{Binding AddFolderCommand}" />
                         <MenuItem Header="Search inside archives (.zip, .7z, .rar)" IsCheckable="True" IsChecked="{Binding SearchInsideArchives}" />
@@ -120,25 +424,72 @@
             </DockPanel>
         </Border>
 
-        <!-- ===== Filter bar ===== -->
-        <Border DockPanel.Dock="Top" Background="#F6F8F9" BorderBrush="#D5DBE0" BorderThickness="0,0,0,1" Padding="10,6"
-                Visibility="{Binding HasRoots, Converter={StaticResource Visible}}">
+        <!-- ===== Under the toolbar: the selection's actions, or the filters that are on (nothing when neither) ===== -->
+        <Border DockPanel.Dock="Top" Background="#EAF1FC" BorderBrush="#C3D3EA" BorderThickness="0,0,0,1" Padding="14,7"
+                Visibility="{Binding ShowSelectionBar, Converter={StaticResource Visible}}">
             <DockPanel LastChildFill="False">
-                <ComboBox Width="120" ItemsSource="{Binding SizeOptions}" SelectedItem="{Binding SizeFilter}" DisplayMemberPath="Label" />
-                <ComboBox Width="140" Margin="6,0,0,0" ItemsSource="{Binding AgeOptions}" SelectedItem="{Binding AgeFilter}" DisplayMemberPath="Label" />
-                <TextBlock Text="by date" VerticalAlignment="Center" Margin="6,0,4,0" />
-                <ComboBox Width="85" ItemsSource="{Binding AgeBasisOptions}" SelectedItem="{Binding AgeBasis}" DisplayMemberPath="Label" />
-                <ComboBox Width="120" Margin="6,0,0,0" ItemsSource="{Binding RatingOptions}" SelectedItem="{Binding RatingFilter}" DisplayMemberPath="Label" />
-                <Button Content="Clear filters" Margin="6,0,0,0" Padding="8,1" Command="{Binding ClearFiltersCommand}"
-                        IsEnabled="{Binding FiltersActive}" />
-                <CheckBox Content="Include subfolders" IsChecked="{Binding IncludeSubfolders}" VerticalAlignment="Center" Margin="16,0,0,0" />
-                <CheckBox Content="Show missing" IsChecked="{Binding ShowMissing}" VerticalAlignment="Center" Margin="12,0,0,0" />
-
+                <TextBlock Text="{Binding SelectionText}" FontWeight="SemiBold" Foreground="#1A4A91" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Button Style="{StaticResource ToolButton}" Command="{Binding DownloadSelectedCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Download…" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource ToolButton}" Margin="6,0,0,0" Click="OnOpenButtonMenu" AutomationProperties.Name="Rate the selection">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE734;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Rate" />
+                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="★★★★★" Command="{Binding RateSelectedCommand}" CommandParameter="5" />
+                            <MenuItem Header="★★★★☆" Command="{Binding RateSelectedCommand}" CommandParameter="4" />
+                            <MenuItem Header="★★★☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="3" />
+                            <MenuItem Header="★★☆☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="2" />
+                            <MenuItem Header="★☆☆☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="1" />
+                            <MenuItem Header="0 stars" Command="{Binding RateSelectedCommand}" CommandParameter="0" />
+                            <Separator />
+                            <MenuItem Header="Unrated" Command="{Binding RateSelectedCommand}" CommandParameter="" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+                <Button Style="{StaticResource ToolButton}" Margin="6,0,0,0" Command="{Binding CopySelectedPathsCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Copy paths" />
+                    </StackPanel>
+                </Button>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <TextBlock Text="{Binding SelectionText}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource Accent}" />
-                    <Button Content="Select all" Padding="8,1" Command="{Binding SelectAllCommand}" />
-                    <Button Content="Clear" Padding="8,1" Margin="4,0,0,0" Command="{Binding ClearSelectionCommand}" />
+                    <Button Content="{Binding SelectAllText}" Style="{StaticResource LinkButton}" Command="{Binding SelectAllCommand}" />
+                    <Button Content="Clear selection" Style="{StaticResource LinkButton}" Command="{Binding ClearSelectionCommand}" Margin="14,0,0,0" />
                 </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Background="#F6F8F9" BorderBrush="#D5DBE0" BorderThickness="0,0,0,1" Padding="14,6"
+                Visibility="{Binding ShowFilterChips, Converter={StaticResource Visible}}">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="{Binding MatchText}" Foreground="#5A6B78" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <ItemsControl ItemsSource="{Binding ActiveFilters}" Focusable="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:FilterChip}">
+                            <Button Style="{StaticResource Chip}" Command="{Binding Remove}" Margin="0,2,6,2"
+                                    ToolTip="{Binding RemoveLabel}" AutomationProperties.Name="{Binding RemoveLabel}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                    <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="9" Foreground="#5A6B78" VerticalAlignment="Center" Margin="8,1,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Clear all" Style="{StaticResource LinkButton}" Command="{Binding ClearAllFiltersCommand}" Margin="4,0,0,0" />
             </DockPanel>
         </Border>
 
@@ -192,8 +543,14 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Folder tree -->
-                <TreeView x:Name="FolderTree" Grid.Column="0" ItemsSource="{Binding Folders}" BorderThickness="0" Background="#F6F8F9" Padding="4"
+                <!-- Folder tree, with whether a folder includes its subfolders right above it -->
+                <DockPanel Grid.Column="0" Background="#F6F8F9">
+                <DockPanel DockPanel.Dock="Top" Margin="12,10,10,4">
+                    <CheckBox DockPanel.Dock="Right" Content="Subfolders" IsChecked="{Binding IncludeSubfolders}" FontSize="12" Foreground="#3A4A56"
+                              ToolTip="Show the models in a folder's subfolders too" />
+                    <TextBlock Text="FOLDERS" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center" />
+                </DockPanel>
+                <TreeView x:Name="FolderTree" ItemsSource="{Binding Folders}" BorderThickness="0" Background="#F6F8F9" Padding="4"
                           MouseRightButtonUp="OnFolderRightClick">
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem">
@@ -208,6 +565,7 @@
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
                 </TreeView>
+                </DockPanel>
 
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#D5DBE0" />
 

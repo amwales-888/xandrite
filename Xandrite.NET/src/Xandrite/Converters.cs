@@ -20,8 +20,20 @@ public sealed class BoolToVisibility : IValueConverter
 /// <summary>Collapses an element whose value is null or an empty string.</summary>
 public sealed class EmptyToCollapsed : IValueConverter
 {
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is null || value is string { Length: 0 } ? Visibility.Collapsed : Visibility.Visible;
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        bool empty = value is null || value is string { Length: 0 };
+        if (parameter is "Invert") empty = !empty;   // shown only while empty (a search box's hint)
+        return empty ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => Binding.DoNothing;
+}
+
+/// <summary>True becomes false and false true.</summary>
+public sealed class InverseBool : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is not true;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => value is not true;
 }

@@ -1,7 +1,7 @@
 # Finding out why a scan or a thumbnail run is slow
 
 Xandrite measures where scans and thumbnail runs spend their time and writes it to the log
-(**Preferences ▾ → Show log file**, or `%APPDATA%\Xandrite.NET\logs\xandrite.log`). Each event is one line of
+(**Preferences (the gear) → Show log file**, or `%APPDATA%\Xandrite.NET\logs\xandrite.log`). Each event is one line of
 `name=value` fields. These are the lines to look at, and what they tell you.
 
 Times added up over several workers can be larger than the wall-clock time; `parallel` says how many workers were

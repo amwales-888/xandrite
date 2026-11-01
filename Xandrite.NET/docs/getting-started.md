@@ -77,9 +77,9 @@ inside archives, becomes part of the library.
 
 You can add folders in three ways:
 
-- **Add folder…** on the welcome screen, or under **Preferences ▾ → Add folder…**
+- **Add folder…** on the welcome screen, or under **Preferences (the gear) → Add folder…**
 - **Drag folders** from File Explorer onto the library window.
-- **Preferences ▾ → Manage folders…** opens a window listing every folder, with how many files it holds and when it
+- **Preferences (the gear) → Manage folders…** opens a window listing every folder, with how many files it holds and when it
   was last scanned. Add as many as you like there; they're all scanned when you close the window.
 
 ![The Manage folders window](images/03-manage-folders.png)
@@ -124,7 +124,7 @@ if it has changed. A scan in progress can be stopped with **Cancel** in the stat
 ### Missing models
 
 If a model was in the library but isn't found at a scan (deleted, or moved out of your folders), it is marked
-**missing**. Missing models are hidden unless you tick **Show missing**; they then appear with a red *missing* badge.
+**missing**. Missing models are hidden unless you turn on **Show missing files** under **Filters**; they then appear with a red *missing* badge.
 If the file comes back, the next scan finds it again, with its rating and view intact.
 
 ---
@@ -149,7 +149,7 @@ chose carry a blue *custom view* badge.
 ### Thumbnail speed
 
 With a large collection, drawing every thumbnail takes a while and can keep your processor busy. Choose how hard
-Xandrite works under **Preferences ▾ → Thumbnail speed**:
+Xandrite works under **Preferences (the gear) → Thumbnail speed**:
 
 | Setting | What it does | When to use it |
 |---|---|---|
@@ -167,32 +167,36 @@ Xandrite remembers it. The status bar shows *(balanced)* or *(in the background)
 ### The folder tree
 
 On the left is a tree of your folders, with **All files** at the top. Click a folder to show only its models.
-**Include subfolders** (in the filter bar) decides whether models in its subfolders are shown too.
+The **Subfolders** tick above the tree decides whether models in its subfolders are shown too.
 
 ### Search
 
-Type in the **Search** box (or press **Ctrl+F** to jump to it). Search matches any part of a file name or folder,
+Type in the search box at the top (or press **Ctrl+F** to jump to it). Search matches any part of a file name or folder,
 for example `gear`, `chess` or `Mechanical\Spares`. Pasting a model's SHA-256 finds that exact model.
 
-### Order by
+### Sort
 
-Sort by **Name**, **Folder and name**, **Date modified**, **Date added** (to the library), **File size** or
-**Rating**. The **⇅** button reverses the order. When sorting by date, each tile shows its date underneath.
+**Sort** orders the grid by **Name**, **Folder and name**, **Date modified**, **Date added** (to the library),
+**File size** or **Rating**. The arrow beside it shows which way the list runs and reverses it; hover over it to see
+which way ("A to Z", "Newest first"...). When sorting by date, each tile shows its date underneath.
 
 ### Filters
 
-The filter bar narrows the grid further:
+Click **Filters** in the toolbar to narrow the grid further:
 
-- **Size:** under 100 KB, 100 KB – 1 MB, 1 – 10 MB, 10 – 50 MB, over 50 MB.
-- **Age:** last 24 hours, last 7 days, last 30 days, last year, or older than a year, **by date** *modified* or
-  *added*.
-- **Rating:** unrated, rated, 0 stars, at least one to four stars, or five stars.
+- **Rating:** any, unrated, rated, 0 stars, at least one to four stars, or five stars.
+- **Date:** choose **Modified** or **Added**, then a period: the last 24 hours, 7 days, 30 days or year, or more than a
+  year ago.
+- **File size:** under 100 KB, 100 KB – 1 MB, 1 – 10 MB, 10 – 50 MB, over 50 MB.
+- **Show missing files:** includes models that weren't found at the last scan.
 
-**Clear filters** puts them all back. **Show missing** includes models that weren't found at the last scan.
+While any filters are on, the Filters button turns blue and shows how many, and they appear as **chips** under the
+toolbar ("★★★ and up", "Modified in the last 30 days"), with how many files match. Click a chip to turn that filter
+off, or **Clear all** to turn them all off. With no filters on, the chips go away and the grid gets the space.
 
 ### Tile size
 
-The **Size** slider in the toolbar makes the thumbnails bigger or smaller.
+The slider in the toolbar, between a small and a large picture, makes the thumbnails bigger or smaller.
 
 ### Tiles
 
@@ -210,11 +214,12 @@ the archive it's in, and why its thumbnail failed, if it did.
 | Select one model | Click it (click again to deselect) |
 | Add or remove one model | **Ctrl**-click it, or click the round tick in its top-right corner |
 | Select a range | **Shift**-click |
-| Select everything shown | **Ctrl+A**, or **Select all** in the filter bar |
-| Clear the selection | **Esc**, or **Clear** in the filter bar |
+| Select everything shown | **Ctrl+A**, or **Select all** in the selection bar |
+| Clear the selection | **Esc**, or **Clear selection** in the selection bar |
 | Move the selection | The arrow keys |
 
-The filter bar shows how many models are selected.
+While models are selected, a blue **selection bar** appears under the toolbar. It shows how many are selected and
+offers **Download…**, **Rate** and **Copy paths** for all of them, plus **Select all** and **Clear selection**.
 
 ### Rating
 
@@ -293,7 +298,7 @@ you left it.
 
 ## 10. Preferences
 
-The **Preferences ▾** menu at the top right of the library window:
+The **Preferences** menu, under the gear at the top right of the library window:
 
 | Item | What it does |
 |---|---|
@@ -320,7 +325,7 @@ it downloads it in the background and the status bar shows **Restart to update**
 - Or carry on. The update is installed the next time you start Xandrite.
 
 Only the parts that changed are downloaded, so updates are usually small. To stop the automatic checks, untick
-**Preferences ▾ → Check for updates automatically**. **Check for updates now** still works when you want it.
+**Preferences (the gear) → Check for updates automatically**. **Check for updates now** still works when you want it.
 
 ---
 
@@ -333,7 +338,7 @@ Only the parts that changed are downloaded, so updates are usually small. To sto
 | The log file | `%APPDATA%\Xandrite.NET\logs\xandrite.log` |
 | The app itself | `%LOCALAPPDATA%\Xandrite.NET` |
 
-**Preferences ▾ → Open data folder** takes you to the first. Thumbnails can always be redrawn, but **ratings and
+**Preferences (the gear) → Open data folder** takes you to the first. Thumbnails can always be redrawn, but **ratings and
 saved views live only in `library.sqlite`**, so include that folder in your backups.
 
 ---
@@ -346,15 +351,15 @@ model, or is protected with a password (inside an archive). Fix or replace the f
 
 **A model I added doesn't appear.** Rescan its folder (right-click it in the folder tree). Check that
 **Search inside archives** is on if the model is inside an archive, and that no filter or search is hiding it
-(**Clear filters**).
+(**Clear all**, beside the filter chips).
 
-**Thumbnail drawing makes my computer sluggish.** Set **Preferences ▾ → Thumbnail speed** to **In the background**.
+**Thumbnail drawing makes my computer sluggish.** Set **Preferences (the gear) → Thumbnail speed** to **In the background**.
 
 **"Thumbnails stopped" in the status bar.** The graphics driver had a problem, for example after the computer
 woke from sleep or the driver was updated. Click **Resume**.
 
 **The log file.** Xandrite writes what it does to a log: every scan, every thumbnail, every problem, with times and
-reasons. **Preferences ▾ → Show log file** opens it. If you report a problem, the log is the most useful thing to
+reasons. **Preferences (the gear) → Show log file** opens it. If you report a problem, the log is the most useful thing to
 include. It's kept to a sensible size automatically.
 
 ---
