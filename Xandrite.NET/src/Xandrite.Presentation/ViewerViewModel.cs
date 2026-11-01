@@ -155,7 +155,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<RatingChoice> RatingChoices { get; } =
     [
-        new("Unrated", null), new("0 stars", 0), new("★", 1), new("★★", 2), new("★★★", 3), new("★★★★", 4), new("★★★★★", 5),
+        new("Unrated", null), new("★", 1), new("★★", 2), new("★★★", 3), new("★★★★", 4), new("★★★★★", 5),
     ];
 
     public RatingChoice Rating
@@ -280,7 +280,9 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
             CanUpdate = inLibrary;
             CanRate = document.FromLibrary && inLibrary;
             int? stars = inLibrary ? _db.GetRating(sha) : null;
-            Rating = RatingChoices.First(r => r.Stars == stars);
+            // A model rated 0 stars before that choice was removed (the Electron app had it) shows as unrated; its
+            // stored rating is left alone unless a new one is chosen.
+            Rating = RatingChoices.FirstOrDefault(r => r.Stars == stars) ?? RatingChoices[0];
             RatingNote = "";
             UpdateNote = inLibrary ? "" : "This file is not in the library, so it has no thumbnail to update.";
 

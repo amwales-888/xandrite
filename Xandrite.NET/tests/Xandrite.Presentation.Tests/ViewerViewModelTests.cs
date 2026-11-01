@@ -179,4 +179,19 @@ public class ViewerViewModelTests
         byte[] png = File.ReadAllBytes(f.Shell.SaveTo);
         Assert.Equal(256, png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19]);   // IHDR width
     }
+
+    [Fact]
+    public async Task AModelRatedZeroStarsBeforeShowsAsUnratedAndKeepsItsRating()
+    {
+        await using var f = new LibraryViewModelTests.Fixture(files: 1);
+        await f.AddModelsFolder();
+        var row = f.Vm.Tiles[0].Row;
+        f.Db.SetRating(row.Sha256, 0);   // as the Electron app could
+        var viewer = Viewer(f);
+        viewer.SetViewport(400, 300);
+        await NextFrame(viewer, () => _ = viewer.LoadAsync(new ViewerDocument(row.Name, row.Format, File.ReadAllBytes(row.Path), FromLibrary: true)));
+        Assert.Null(viewer.Rating.Stars);
+        Assert.Equal(0, f.Db.GetRating(row.Sha256));   // not changed by opening it
+        Assert.False(viewer.RatingChoices.Any(c => c.Stars == 0));
+    }
 }

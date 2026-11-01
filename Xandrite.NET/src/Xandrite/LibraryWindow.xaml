@@ -448,7 +448,6 @@
                             <MenuItem Header="★★★☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="3" />
                             <MenuItem Header="★★☆☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="2" />
                             <MenuItem Header="★☆☆☆☆" Command="{Binding RateSelectedCommand}" CommandParameter="1" />
-                            <MenuItem Header="0 stars" Command="{Binding RateSelectedCommand}" CommandParameter="0" />
                             <Separator />
                             <MenuItem Header="Unrated" Command="{Binding RateSelectedCommand}" CommandParameter="" />
                         </ContextMenu>

@@ -184,7 +184,7 @@ which way ("A to Z", "Newest first"...). When sorting by date, each tile shows i
 
 Click **Filters** in the toolbar to narrow the grid further:
 
-- **Rating:** any, unrated, rated, 0 stars, at least one to four stars, or five stars.
+- **Rating:** any, unrated, rated, at least one to four stars, or five stars.
 - **Date:** choose **Modified** or **Added**, then a period: the last 24 hours, 7 days, 30 days or year, or more than a
   year ago.
 - **File size:** under 100 KB, 100 KB – 1 MB, 1 – 10 MB, 10 – 50 MB, over 50 MB.
@@ -223,7 +223,7 @@ offers **Download…**, **Rate** and **Copy paths** for all of them, plus **Sele
 
 ### Rating
 
-Give models from zero to five stars, to find your favourites later (sort or filter by **Rating**):
+Give models one to five stars, to find your favourites later (sort or filter by **Rating**):
 
 - Select one or more models and press **1** to **5**. Press **0** to clear the rating.
 - Or right-click and choose **Rate**.
