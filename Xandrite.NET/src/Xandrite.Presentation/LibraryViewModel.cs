@@ -118,6 +118,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             _includeSubfolders = _db.GetSetting("ui.subfolders", "1") == "1";
             _showMissing = _db.GetSetting("ui.missing") == "1";
             _queue.Speed = WorkLimits.Parse(_db.GetSetting(ThumbnailSpeedSetting));
+            ApplyDeveloperOptions();
             if (double.TryParse(_db.GetSetting("ui.tileSize"), NumberStyles.Float, CultureInfo.InvariantCulture, out double size))
                 _tileSize = Math.Clamp(size, MinTileSize, MaxTileSize);
         }
@@ -154,6 +155,47 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand ToggleDirectionCommand { get; }
     public RelayCommand OpenDataFolderCommand { get; }
     public RelayCommand ShowLogCommand { get; }
+
+    /* ---------- developer options (Preferences → Developer, shown only with --developer) ---------- */
+
+    /// <summary>Started with --developer: the Developer menu is shown and its saved options are in force.</summary>
+    public bool DeveloperMode { get; init; }
+
+    public const string DevArchivesSetting = "dev.log.archives", DevFilesSetting = "dev.log.files",
+        DevThreadsSetting = "dev.log.threads", DevThreadIdsSetting = "dev.log.thread_ids";
+
+    public bool LogArchives { get => DevLog.Archives; set => SetDeveloperOption(DevArchivesSetting, value, v => DevLog.Archives = v); }
+    public bool LogFiles { get => DevLog.Files; set => SetDeveloperOption(DevFilesSetting, value, v => DevLog.Files = v); }
+    public bool LogThreads { get => DevLog.Threads; set => SetDeveloperOption(DevThreadsSetting, value, v => DevLog.Threads = v); }
+
+    public bool LogThreadIds
+    {
+        get => _log is FileLog { ThreadIds: true };
+        set => SetDeveloperOption(DevThreadIdsSetting, value, v => { if (_log is FileLog file) file.ThreadIds = v; });
+    }
+
+    private void SetDeveloperOption(string key, bool value, Action<bool> apply, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        apply(value);
+        _db.SetSetting(key, value ? "1" : "0");
+        _log.Info("setting.changed", ("name", key), ("value", value));
+        OnPropertyChanged(name);
+    }
+
+    /// <summary>Puts the saved developer options in force: only in developer mode, so they never run unseen.</summary>
+    private void ApplyDeveloperOptions()
+    {
+        if (!DeveloperMode) return;   // the options stay off, and the shared developer log is left alone
+        DevLog.Log = _log;
+        bool On(string key) => DeveloperMode && _db.GetSetting(key) == "1";
+        DevLog.Archives = On(DevArchivesSetting);
+        DevLog.Files = On(DevFilesSetting);
+        DevLog.Threads = On(DevThreadsSetting);
+        if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
+        if (DeveloperMode)
+            _log.Info("developer.options", ("archives", DevLog.Archives), ("files", DevLog.Files), ("threads", DevLog.Threads),
+                ("thread_ids", LogThreadIds));
+    }
 
     /// <summary>New versions of the app (set by the app; the status bar and the Preferences menu show it).</summary>
     public UpdateViewModel? Updates { get; set; }

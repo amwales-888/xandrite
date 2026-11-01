@@ -145,7 +145,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             _blocked = null;
             _total = _done = _failed = _skipped = 0;
             _current = null;
-            _run = Task.Run(RunAsync);
+            _run = DevLog.Run("thumbs.run", RunAsync);
         }
     }
 
@@ -231,7 +231,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 Emit();
 
                 var work = new ConcurrentQueue<WorkItem>(Plan(jobs));
-                await Task.WhenAll(Enumerable.Range(0, _renderers.Length).Select(slot => Task.Run(() => WorkerAsync(slot, work, cancellation))));
+                await Task.WhenAll(Enumerable.Range(0, _renderers.Length).Select(slot => DevLog.Run($"thumbs.worker.{slot}", () => WorkerAsync(slot, work, cancellation))));
 
                 // The renderer broke: wait for Resume (which clears the message), then look at what is still pending.
                 Task wait;
@@ -492,7 +492,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         var limits = BackgroundWork.Current;
         var io = _metrics.Io;
         long extractMs = 0;   // reading the whole archive, including waiting for the models to be drawn (only 2 wait at a time)
-        var producer = Task.Run(async () =>
+        var producer = DevLog.Run("thumbs.archive_read", async () =>
         {
             BackgroundWork.Current = limits;
             IoMeter.Current = io;
@@ -518,7 +518,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                 extractMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 stream.Models.Writer.TryComplete();
             }
-        }, CancellationToken.None);
+        });
 
         _streams[stream] = 0;
         try

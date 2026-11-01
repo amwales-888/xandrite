@@ -429,6 +429,16 @@
                         <MenuItem Header="Check for updates automatically" IsCheckable="True" IsChecked="{Binding Updates.CheckAutomatically}" />
                         <MenuItem Header="Check for updates now" Command="{Binding Updates.CheckNowCommand}" />
                         <MenuItem Header="About Xandrite…" Command="{Binding Updates.AboutCommand}" />
+                        <!-- Only when started with the developer switch: extra logging, all written to the normal log file -->
+                        <Separator Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}" />
+                        <MenuItem Header="Developer" Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}">
+                            <MenuItem Header="Log archives opened and closed" IsCheckable="True" IsChecked="{Binding LogArchives}" />
+                            <MenuItem Header="Log files opened and closed" IsCheckable="True" IsChecked="{Binding LogFiles}" />
+                            <MenuItem Header="Log threads started and ended" IsCheckable="True" IsChecked="{Binding LogThreads}" />
+                            <MenuItem Header="Thread id on every log line" IsCheckable="True" IsChecked="{Binding LogThreadIds}" />
+                            <Separator />
+                            <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />
+                        </MenuItem>
                     </MenuItem>
                 </Menu>
             </DockPanel>
