@@ -312,7 +312,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 chips.Add(Chip(_viewFilter.Value == Library.ViewFilter.Custom ? "Custom views" : "Default views", "view",
                     () => ViewFilter = FilterOptions.Views[0]));
             if (_sizeFilter.Min is not null || _sizeFilter.Max is not null)
-                chips.Add(Chip("Size " + _sizeFilter.Label.ToLowerInvariant(), "size", () => SizeFilter = FilterOptions.Sizes[0]));
+                chips.Add(Chip("Size " + LowerFirst(_sizeFilter.Label), "size", () => SizeFilter = FilterOptions.Sizes[0]));
             if (_showMissing)
                 chips.Add(Chip("Including missing files", "missing files", () => ShowMissing = false));
             return chips;
@@ -320,6 +320,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             static FilterChip Chip(string label, string what, Action remove) => new(label, "Remove the " + what + " filter: " + label, new RelayCommand(remove));
         }
     }
+
+    /// <summary>"Under 100 KB" becomes "under 100 KB": only the first letter, so units keep their case.</summary>
+    private static string LowerFirst(string text) => text.Length == 0 ? text : char.ToLowerInvariant(text[0]) + text[1..];
 
     /// <summary>"Modified in the last 7 days", "Added more than a year ago"...</summary>
     internal static string DateChipLabel(AgeBasisOption basis, AgeFilterOption age)

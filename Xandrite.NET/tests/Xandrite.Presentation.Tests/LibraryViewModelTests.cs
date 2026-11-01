@@ -228,6 +228,12 @@ public class LibraryViewModelTests
         Assert.Equal("1 file match", f.Vm.MatchText);
         Assert.StartsWith("Remove the rating filter", f.Vm.ActiveFilters[0].RemoveLabel);
 
+        f.Vm.SizeFilter = FilterOptions.Sizes.Single(z => z.Label == "10 – 50 MB");
+        Assert.Contains("Size 10 – 50 MB", f.Vm.ActiveFilters.Select(c => c.Label));   // units keep their case
+        f.Vm.SizeFilter = FilterOptions.Sizes.Single(z => z.Label == "Under 100 KB");
+        Assert.Contains("Size under 100 KB", f.Vm.ActiveFilters.Select(c => c.Label));
+        f.Vm.SizeFilter = FilterOptions.Sizes[0];
+
         f.Vm.ActiveFilters[0].Remove.Execute(null);                 // the rating chip's ×
         Assert.Equal(RatingFilter.Any, f.Vm.RatingFilter.Value);
         Assert.Equal(new[] { "Added in the last 30 days", "Including missing files" }, f.Vm.ActiveFilters.Select(c => c.Label));
