@@ -209,6 +209,39 @@ public class DevLogTests
         Assert.Equal(1 << 20, ArchiveFiles.ReadBufferBytes);
     }
 
+    [Fact]
+    public async Task ThumbnailsOpenAZipOnceAndReadItFrontToBack()
+    {
+        using var lib = new TempLibrary();
+        var random = new Random(7);
+        string Noise(int n) => Convert.ToBase64String(Enumerable.Range(0, n).Select(_ => (byte)random.Next(256)).ToArray());   // hardly compresses
+        var entries = new Dictionary<string, string>();
+        for (int i = 0; i < 30; i++)
+        {
+            entries[$"m{i:00}.stl"] = "solid " + i + "\n" + Noise(60_000);
+            if (i % 3 == 0) entries[$"notes{i}.txt"] = Noise(20_000);   // not models: stepped over
+        }
+        string zip = lib.WriteZip("kit.zip", entries);
+        long size = new FileInfo(zip).Length;
+        using var s = new Session(lib, archives: true, archiveIo: true);
+        try
+        {
+            ArchiveFiles.ReadBufferBytes = 256 * 1024;
+            int got = 0;
+            await new ZipArchiveReader().ReadEntriesAsync(zip, entries.Keys.Where(k => k.EndsWith(".stl")).Reverse().ToList(), 1 << 20,
+                read => { if (read.Bytes is not null) got++; return Task.CompletedTask; }, CancellationToken.None);
+            Assert.Equal(30, got);
+        }
+        finally
+        {
+            ArchiveFiles.ReadBufferBytes = ArchiveFiles.DefaultReadBufferBytes;
+        }
+
+        Assert.Single(Regex.Matches(s.Text, @" archive\.open [^\n]*kit\.zip"));
+        long read = Regex.Matches(s.Text, @" archive\.read path=[^\n]*kit\.zip""? at=\d+ asked=\d+ got=(\d+)").Sum(m => long.Parse(m.Groups[1].Value));
+        Assert.True(read <= size + 2 * 256 * 1024, $"read {read:N0} bytes of a {size:N0}-byte zip");   // the directory at the end, then once through
+    }
+
     /// <summary>The scanner's own log line for the last scan (TempLibrary scans without a log, so scan again with one).</summary>
     private static string ScanLog(TempLibrary lib)
     {
