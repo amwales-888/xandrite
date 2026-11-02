@@ -425,10 +425,32 @@
                         <Separator />
                         <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />
                         <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />
+                        <MenuItem Header="Show statistics" Command="{Binding ShowStatisticsCommand}" />
                         <Separator />
                         <MenuItem Header="Check for updates automatically" IsCheckable="True" IsChecked="{Binding Updates.CheckAutomatically}" />
                         <MenuItem Header="Check for updates now" Command="{Binding Updates.CheckNowCommand}" />
                         <MenuItem Header="About Xandrite…" Command="{Binding Updates.AboutCommand}" />
+                        <!-- Only when started with the developer switch: extra logging, all written to the normal log file -->
+                        <Separator Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}" />
+                        <MenuItem Header="Developer" Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}">
+                            <MenuItem Header="Log archives opened and closed" IsCheckable="True" IsChecked="{Binding LogArchives}" />
+                            <MenuItem Header="Log archive reads, seeks and writes (very detailed)" IsCheckable="True" IsChecked="{Binding LogArchiveIo}" />
+                            <MenuItem Header="Log files opened and closed" IsCheckable="True" IsChecked="{Binding LogFiles}" />
+                            <MenuItem Header="Log threads started and ended" IsCheckable="True" IsChecked="{Binding LogThreads}" />
+                            <MenuItem Header="Thread id on every log line" IsCheckable="True" IsChecked="{Binding LogThreadIds}" />
+                            <Separator />
+                            <MenuItem Header="Archive read size">
+                                <MenuItem Header="64 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead64}" />
+                                <MenuItem Header="256 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead256}" />
+                                <MenuItem Header="1 MB (default)" IsCheckable="True" IsChecked="{Binding ArchiveRead1024}" />
+                                <MenuItem Header="4 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead4096}" />
+                                <MenuItem Header="12 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead12288}" />
+                                <MenuItem Header="16 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead16384}" />
+                                <MenuItem Header="32 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead32768}" />
+                            </MenuItem>
+                            <Separator />
+                            <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />
+                        </MenuItem>
                     </MenuItem>
                 </Menu>
             </DockPanel>
@@ -512,7 +534,7 @@
                 <Button DockPanel.Dock="Right" Content="Rescan All" Padding="10,2" Margin="8,0,0,0" Command="{Binding RescanAllCommand}"
                         Visibility="{Binding HasRoots, Converter={StaticResource Visible}}" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <TextBlock Text="{Binding ThumbnailText}" VerticalAlignment="Center" Foreground="#4A5A66" />
+                    <TextBlock Text="{Binding ThumbnailText}" VerticalAlignment="Center" Foreground="#4A5A66" Typography.NumeralAlignment="Tabular" />
                     <Button Content="Pause" Padding="8,1" Margin="6,0,0,0" Command="{Binding PauseThumbnailsCommand}"
                             Visibility="{Binding CanPauseThumbnails, Converter={StaticResource Visible}}" />
                     <Button Content="Resume" Padding="8,1" Margin="6,0,0,0" Command="{Binding ResumeThumbnailsCommand}"
@@ -527,7 +549,8 @@
                             ToolTip="Show only the models found in more than one place"
                             Visibility="{Binding CopiesText, Converter={StaticResource IfText}}" />
                     <TextBlock Text="{Binding ListText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" />
-                    <TextBlock Text="{Binding ScanText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" TextTrimming="CharacterEllipsis" MaxWidth="520" />
+                    <TextBlock Text="{Binding ScanText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" TextTrimming="CharacterEllipsis" MaxWidth="520"
+                               Typography.NumeralAlignment="Tabular" />
                     <Button Content="Cancel" Padding="8,1" Margin="6,0,0,0" Command="{Binding CancelScanCommand}"
                             Visibility="{Binding IsScanning, Converter={StaticResource Visible}}" />
                     <TextBlock Text="{Binding ActivityText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" />

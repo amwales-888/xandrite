@@ -29,6 +29,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private readonly ILibraryShell _shell;
     private readonly IUiDispatcher _ui;
     private readonly ILog _log;
+    private readonly ILog _statistics;
 
     private List<TileViewModel> _tiles = [];
     private Dictionary<string, List<TileViewModel>> _bySha = [];
@@ -69,9 +70,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private readonly Stopwatch _lastThumbStatus = Stopwatch.StartNew();
     private bool _thumbStatusQueued;
 
-    public LibraryViewModel(LibraryDatabase db, LibraryLocation location, ThumbnailQueue queue, ILibraryShell shell, IUiDispatcher ui, ModelSource? source = null, ILog? log = null)
+    public LibraryViewModel(LibraryDatabase db, LibraryLocation location, ThumbnailQueue queue, ILibraryShell shell, IUiDispatcher ui, ModelSource? source = null, ILog? log = null, ILog? statistics = null)
     {
         _log = log ?? NullLog.Instance;
+        _statistics = statistics ?? NullLog.Instance;
         _db = db;
         _location = location;
         _queue = queue;
@@ -96,6 +98,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         ToggleDirectionCommand = new RelayCommand(() => Descending = !Descending);
         OpenDataFolderCommand = new RelayCommand(() => _shell.Reveal(_location.DataFolder, selectFile: false));
         ShowLogCommand = new RelayCommand(ShowLog);
+        ShowStatisticsCommand = new RelayCommand(ShowStatistics);
 
         _queue.JobDone += done => _ui.Post(() => OnThumbnailDone(done));
         _queue.Progress += _ => QueueThumbnailStatus();
@@ -118,6 +121,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             _includeSubfolders = _db.GetSetting("ui.subfolders", "1") == "1";
             _showMissing = _db.GetSetting("ui.missing") == "1";
             _queue.Speed = WorkLimits.Parse(_db.GetSetting(ThumbnailSpeedSetting));
+            ArchiveFiles.ReadBufferBytes = int.TryParse(_db.GetSetting(ArchiveReadSetting), NumberStyles.Integer, CultureInfo.InvariantCulture, out int kb)
+                ? kb * 1024 : ArchiveFiles.DefaultReadBufferBytes;
+            ApplyDeveloperOptions();
             if (double.TryParse(_db.GetSetting("ui.tileSize"), NumberStyles.Float, CultureInfo.InvariantCulture, out double size))
                 _tileSize = Math.Clamp(size, MinTileSize, MaxTileSize);
         }
@@ -155,6 +161,82 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public RelayCommand OpenDataFolderCommand { get; }
     public RelayCommand ShowLogCommand { get; }
 
+    public RelayCommand ShowStatisticsCommand { get; }
+
+    /* ---------- developer options (Preferences → Developer, shown only with --developer) ---------- */
+
+    /// <summary>Started with --developer: the Developer menu is shown and its saved options are in force.</summary>
+    public bool DeveloperMode { get; init; }
+
+    public const string DevArchivesSetting = "dev.log.archives", DevFilesSetting = "dev.log.files",
+        DevThreadsSetting = "dev.log.threads", DevThreadIdsSetting = "dev.log.thread_ids", DevArchiveIoSetting = "dev.log.archive_io";
+
+    public bool LogArchives { get => DevLog.Archives; set => SetDeveloperOption(DevArchivesSetting, value, v => DevLog.Archives = v); }
+    public bool LogArchiveIo { get => DevLog.ArchiveIo; set => SetDeveloperOption(DevArchiveIoSetting, value, v => DevLog.ArchiveIo = v); }
+    public bool LogFiles { get => DevLog.Files; set => SetDeveloperOption(DevFilesSetting, value, v => DevLog.Files = v); }
+    public bool LogThreads { get => DevLog.Threads; set => SetDeveloperOption(DevThreadsSetting, value, v => DevLog.Threads = v); }
+
+    public bool LogThreadIds
+    {
+        get => _log is FileLog { ThreadIds: true };
+        set => SetDeveloperOption(DevThreadIdsSetting, value, v => { if (_log is FileLog file) file.ThreadIds = v; });
+    }
+
+    private void SetDeveloperOption(string key, bool value, Action<bool> apply, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        apply(value);
+        _db.SetSetting(key, value ? "1" : "0");
+        _log.Info("setting.changed", ("name", key), ("value", value));
+        OnPropertyChanged(name);
+    }
+
+    public const string ArchiveReadSetting = "io.archive_read_kb";
+
+    /// <summary>
+    /// Bytes read from an archive file at a time (Developer → Archive read size). Unlike the logging switches this is
+    /// in force however the app was started; only the menu needs --developer.
+    /// </summary>
+    public int ArchiveReadKb
+    {
+        get => ArchiveFiles.ReadBufferBytes / 1024;
+        set
+        {
+            if (value == ArchiveReadKb) return;
+            ArchiveFiles.ReadBufferBytes = value * 1024;
+            _db.SetSetting(ArchiveReadSetting, ArchiveReadKb.ToString(CultureInfo.InvariantCulture));
+            _log.Info("setting.changed", ("name", ArchiveReadSetting), ("value", ArchiveReadKb));
+            OnPropertyChanged();
+            foreach (var kb in ArchiveReadChoices) OnPropertyChanged("ArchiveRead" + kb);
+        }
+    }
+
+    public static readonly int[] ArchiveReadChoices = [64, 256, 1024, 4096, 12288, 16384, 32768];
+
+    // One per menu item, so the menu ticks the current size (unticking one does nothing).
+    public bool ArchiveRead64 { get => ArchiveReadKb == 64; set { if (value) ArchiveReadKb = 64; else OnPropertyChanged(); } }
+    public bool ArchiveRead256 { get => ArchiveReadKb == 256; set { if (value) ArchiveReadKb = 256; else OnPropertyChanged(); } }
+    public bool ArchiveRead1024 { get => ArchiveReadKb == 1024; set { if (value) ArchiveReadKb = 1024; else OnPropertyChanged(); } }
+    public bool ArchiveRead4096 { get => ArchiveReadKb == 4096; set { if (value) ArchiveReadKb = 4096; else OnPropertyChanged(); } }
+    public bool ArchiveRead12288 { get => ArchiveReadKb == 12288; set { if (value) ArchiveReadKb = 12288; else OnPropertyChanged(); } }
+    public bool ArchiveRead16384 { get => ArchiveReadKb == 16384; set { if (value) ArchiveReadKb = 16384; else OnPropertyChanged(); } }
+    public bool ArchiveRead32768 { get => ArchiveReadKb == 32768; set { if (value) ArchiveReadKb = 32768; else OnPropertyChanged(); } }
+
+    /// <summary>Puts the saved developer options in force: only in developer mode, so they never run unseen.</summary>
+    private void ApplyDeveloperOptions()
+    {
+        if (!DeveloperMode) return;   // the options stay off, and the shared developer log is left alone
+        DevLog.Log = _log;
+        bool On(string key) => DeveloperMode && _db.GetSetting(key) == "1";
+        DevLog.Archives = On(DevArchivesSetting);
+        DevLog.ArchiveIo = On(DevArchiveIoSetting);
+        DevLog.Files = On(DevFilesSetting);
+        DevLog.Threads = On(DevThreadsSetting);
+        if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
+        if (DeveloperMode)
+            _log.Info("developer.options", ("archives", DevLog.Archives), ("archive_io", DevLog.ArchiveIo), ("files", DevLog.Files), ("threads", DevLog.Threads),
+                ("thread_ids", LogThreadIds));
+    }
+
     /// <summary>New versions of the app (set by the app; the status bar and the Preferences menu show it).</summary>
     public UpdateViewModel? Updates { get; set; }
 
@@ -164,6 +246,14 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _log.Flush();
         if (_log.Path is { } path && File.Exists(path)) _shell.OpenFile(path);
         else _shell.ShowMessage("Log file", "There is no log file yet.");
+    }
+
+    /// <summary>Preferences → Show statistics: one line for each scan and each thumbnail run, oldest first.</summary>
+    public void ShowStatistics()
+    {
+        _statistics.Flush();
+        if (_statistics.Path is { } path && File.Exists(path)) _shell.OpenFile(path);
+        else _shell.ShowMessage("Statistics", "Nothing has been recorded yet. A line is added each time a scan or a thumbnail run finishes.");
     }
 
     /* ---------- the filter bar ---------- */
@@ -461,35 +551,100 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _selectedFolder, value)) Reload(); }
     }
 
-    private void LoadTree()
-    {
-        var expanded = Folders.SelectMany(f => f.SelfAndDescendants()).Where(f => f.IsExpanded && f.Path is not null).Select(f => f.Path!).ToHashSet();
-        var stats = _db.GetStats();
-        var tree = _db.GetFolderTree();
-        HasRoots = tree.Count > 0;
+    /// <summary>Raised after the tree has been brought up to date (for tests).</summary>
+    internal event Action? TreeUpdated;
 
-        Folders.Clear();
-        var all = new FolderNodeViewModel("All files", null, (int)stats.Files, isRoot: false, OnFolderSelected);
-        Folders.Add(all);
-        FolderNodeViewModel Map(FolderNode node, bool isRoot)
-        {
-            var vm = new FolderNodeViewModel(node.Name, node.Path, node.Count, isRoot, OnFolderSelected)
-            {
-                IsExpanded = isRoot && expanded.Count == 0 || expanded.Contains(node.Path),
-            };
-            foreach (var child in node.Children) vm.Children.Add(Map(child, false));
-            return vm;
-        }
-        foreach (var root in tree) Folders.Add(Map(root, true));
+    private int _treeVersion;   // goes up each time the tree is brought up to date (on the UI thread)
+
+    /// <summary>How often the folder tree is brought up to date while a scan runs.</summary>
+    public TimeSpan TreeRefreshEvery { get; init; } = TimeSpan.FromSeconds(2);
+
+    private void LoadTree() => ApplyTree(_db.GetFolderTree(), (int)_db.GetStats().Files);
+
+    /// <summary>
+    /// Brings the tree up to date in place: counts change, new folders appear in order, folders that are gone go.
+    /// Nodes that stay are the same objects, so what is expanded, selected and scrolled to stays as it was. Returns
+    /// true if the selected folder has gone (and "All files" is now selected; the caller reloads the list).
+    /// </summary>
+    private bool ApplyTree(IReadOnlyList<FolderNode> tree, int allFiles)
+    {
+        _treeVersion++;
+        HasRoots = tree.Count > 0;
+        bool anyExpanded = Folders.Any(f => f.SelfAndDescendants().Any(n => n.IsExpanded));
+        if (Folders.Count == 0 || Folders[0].Path is not null)
+            Folders.Insert(0, new FolderNodeViewModel("All files", null, allFiles, isRoot: false, OnFolderSelected));
+        var all = Folders[0];
+        all.Count = allFiles;
+        Merge(Folders, tree, offset: 1, isRoot: true, expandNew: !anyExpanded);
 
         // Select the same folder again without reloading (the caller reloads).
         var selected = Folders.SelectMany(f => f.SelfAndDescendants()).FirstOrDefault(f => f.Path == _selectedFolder) ?? all;
-        if (selected.Path != _selectedFolder) _selectedFolder = selected.Path;
+        bool gone = selected.Path != _selectedFolder;
+        if (gone) _selectedFolder = selected.Path;
         _loading = true;
         try { selected.IsSelected = true; }
         finally { _loading = false; }
         OnPropertyChanged(nameof(SelectedFolder));
+        TreeUpdated?.Invoke();
+        return gone;
     }
+
+    /// <summary>Makes <paramref name="nodes"/> (from <paramref name="offset"/> on) match <paramref name="folders"/>, keeping the nodes that stay.</summary>
+    private void Merge(ObservableCollection<FolderNodeViewModel> nodes, IReadOnlyList<FolderNode> folders, int offset, bool isRoot, bool expandNew)
+    {
+        var existing = new Dictionary<string, FolderNodeViewModel>(StringComparer.Ordinal);
+        for (int i = offset; i < nodes.Count; i++) existing.TryAdd(nodes[i].Path!, nodes[i]);
+        for (int i = 0; i < folders.Count; i++)
+        {
+            var folder = folders[i];
+            int at = offset + i;
+            if (existing.Remove(folder.Path, out var node))
+            {
+                node.Count = folder.Count;
+                int now = nodes.IndexOf(node);
+                if (now != at) nodes.Move(now, at);
+            }
+            else
+            {
+                node = new FolderNodeViewModel(folder.Name, folder.Path, folder.Count, isRoot, OnFolderSelected) { IsExpanded = isRoot && expandNew };
+                nodes.Insert(at, node);
+            }
+            Merge(node.Children, folder.Children, 0, isRoot: false, expandNew: false);
+        }
+        while (nodes.Count > offset + folders.Count) nodes.RemoveAt(nodes.Count - 1);   // what is left over has gone
+    }
+
+    /// <summary>
+    /// While a scan runs: reads the tree on a worker thread, then shows it, unless the tree has been loaded since
+    /// (the scan finished), so an older tree never replaces a newer one. One at a time.
+    /// </summary>
+    private void RefreshTreeDuringScan()
+    {
+        int version = Volatile.Read(ref _treeVersion);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var tree = _db.GetFolderTree();
+                int files = tree.Sum(r => r.Count);
+                _ui.Post(() =>
+                {
+                    if (_treeVersion != version) return;
+                    if (ApplyTree(tree, files)) Reload();
+                });
+            }
+            catch (Exception e)
+            {
+                _log.Warn("tree.refresh_failed", ("message", e.Message));   // the tree is brought up to date when the scan ends anyway
+            }
+            finally
+            {
+                Volatile.Write(ref _treeRefreshing, 0);
+            }
+        });
+    }
+
+    private int _treeRefreshing;
 
     private void OnFolderSelected(FolderNodeViewModel node)
     {
@@ -971,11 +1126,13 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (IsScanning || roots.Count == 0) return;
         IsScanning = true;
         var cancel = _scanCancel = new CancellationTokenSource();
-        var scanner = new LibraryScanner(_db, _source) { Log = _log };
+        var scanner = new LibraryScanner(_db, _source) { Log = _log, Statistics = _statistics };
         var scanClock = Stopwatch.StartNew();
+        var scanStarted = DateTimeOffset.Now;
         if (roots.Count > 1) _log.Info("rescan.start", ("folders", roots.Count));
         var summaries = new List<ScanSummary>();
         var throttle = Stopwatch.StartNew();
+        var treeClock = Stopwatch.StartNew();
         try
         {
             for (int i = 0; i < roots.Count && !cancel.IsCancellationRequested; i++)
@@ -986,6 +1143,12 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 {
                     summaries.Add(await scanner.ScanAsync(roots[i], SearchInsideArchives, p =>
                     {
+                        // Folders appear in the tree as they are found, not only when the scan ends.
+                        if (treeClock.Elapsed >= TreeRefreshEvery && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0)
+                        {
+                            treeClock.Restart();
+                            RefreshTreeDuringScan();
+                        }
                         if (throttle.ElapsedMilliseconds < 150) return;
                         throttle.Restart();
                         _ui.Post(() => ScanText = $"{prefix}{p.Found:N0} found, {p.Hashed:N0} read, {p.Reused:N0} unchanged");
@@ -1008,6 +1171,16 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (roots.Count > 1)
             _log.InfoOrWarn(cancel.IsCancellationRequested || summaries.Any(s => s.Errors > 0), "rescan.end", ("duration_ms", scanClock.ElapsedMilliseconds),
                 ("folders", roots.Count), ("cancelled", cancel.IsCancellationRequested));
+        if (roots.Count > 1)
+        {
+            long ms = scanClock.ElapsedMilliseconds;
+            _statistics.InfoOrWarn(cancel.IsCancellationRequested || summaries.Any(s => s.Errors > 0), "rescan",
+                ("result", cancel.IsCancellationRequested ? "cancelled" : "finished"), ("folders", roots.Count),
+                ("started", Stat.Time(scanStarted)), ("ended", Stat.Time(DateTimeOffset.Now)), ("took", Stat.Took(ms)), ("duration_s", Stat.Seconds(ms)),
+                ("files", summaries.Sum(s => s.Found)), ("unchanged", summaries.Sum(s => s.Reused)), ("read", summaries.Sum(s => s.Hashed)),
+                ("new", summaries.Sum(s => s.Added)), ("moved", summaries.Sum(s => s.Moved)), ("missing", summaries.Sum(s => s.Missing)),
+                ("problems", summaries.Sum(s => s.Errors)), ("archive_read_kb", ArchiveReadKb), ("version", Stat.Version));
+        }
         ScanText = Describe(summaries, cancel.IsCancellationRequested);
         RefreshAll();
         _queue.Start();   // thumbnails for anything new
@@ -1136,13 +1309,22 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanResumeThumbnails));
         _failedCount = s.Counts.Failed;
         OnPropertyChanged(nameof(HasFailedThumbnails));
+        ThumbnailText = DescribeThumbnails(s, SpeedNote);
+    }
+
+    /// <summary>
+    /// The status bar's thumbnail text: counts only. Not the file being drawn, which changed many times a second and
+    /// made the status bar jump about.
+    /// </summary>
+    internal static string DescribeThumbnails(ThumbnailQueueStatus s, string speedNote)
+    {
         long all = s.Counts.Ok + s.Counts.Pending + s.Counts.Failed;
         string failed = s.Counts.Failed > 0 ? $" · {s.Counts.Failed:N0} failed" : "";
-        ThumbnailText = s switch
+        return s switch
         {
             { Blocked: { } blocked } => $"Thumbnails stopped: {blocked} Resume to try again.",
             { Paused: true } => $"Thumbnails paused · {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
-            { Running: true } => $"Drawing thumbnails{SpeedNote} · {s.Counts.Ok:N0} of {all:N0}{failed}" + (s.Current is { } c ? $" · {c}" : ""),
+            { Running: true } => $"Drawing thumbnails{speedNote} · {s.Counts.Ok:N0} of {all:N0}{failed}",
             _ when s.Counts.Pending > 0 => $"Thumbnails: {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
             _ when all > 0 => $"Thumbnails: all {s.Counts.Ok:N0} drawn{failed}",
             _ => "",

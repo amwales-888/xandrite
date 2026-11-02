@@ -1,5 +1,6 @@
 using Xandrite.Geometry;
 using Xandrite.Library;
+using Xandrite.Library.Scanning;
 using Xandrite.Library.Thumbnails;
 using Xandrite.Rendering;
 
@@ -293,6 +294,208 @@ public class LibraryViewModelTests
         f.Vm.ClearAllFiltersCommand.Execute(null);
         Assert.False(f.Vm.CopiesFilter.CopiesOnly);
         Assert.Equal(5, f.Vm.Total);
+    }
+
+    [Fact]
+    public async Task DeveloperLoggingOptionsAreSavedButOnlyUsedInDeveloperMode()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        string logFile = Path.Combine(f.Dir, "logs", "x.log");
+        using var log = new Xandrite.Library.Logging.FileLog(logFile);
+        try
+        {
+            var dev = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log) { DeveloperMode = true };
+            dev.Initialize();
+            Assert.False(dev.LogArchives);
+            dev.LogArchives = true;
+            dev.LogThreadIds = true;
+            Assert.True(Xandrite.Library.Logging.DevLog.Archives);
+            Assert.True(log.ThreadIds);
+            Assert.Equal("1", f.Db.GetSetting(LibraryViewModel.DevArchivesSetting));
+
+            // Started normally: the saved options are not put in force (and the menu is hidden).
+            Xandrite.Library.Logging.DevLog.Archives = false;
+            log.ThreadIds = false;
+            var normal = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log);
+            normal.Initialize();
+            Assert.False(normal.DeveloperMode);
+            Assert.False(Xandrite.Library.Logging.DevLog.Archives);
+            Assert.False(log.ThreadIds);
+
+            // Started with --developer again: they are.
+            var again = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), log: log) { DeveloperMode = true };
+            again.Initialize();
+            Assert.True(again.LogArchives);
+            Assert.True(again.LogThreadIds);
+            Assert.False(again.LogFiles);
+            log.Flush();
+            Assert.Contains("developer.options archives=true archive_io=false files=false threads=false thread_ids=true", File.ReadAllText(logFile));
+        }
+        finally
+        {
+            Xandrite.Library.Logging.DevLog.Archives = false;
+            Xandrite.Library.Logging.DevLog.Log = Xandrite.Library.Logging.NullLog.Instance;
+        }
+    }
+
+    [Fact]
+    public async Task ScansAndRescansAreRecordedInTheStatisticsFile_WithTheReadSize()
+    {
+        var f = new Fixture(files: 2);
+        await using var cleanup = f;
+        string other = Path.Combine(f.Dir, "more");
+        Directory.CreateDirectory(other);
+        File.WriteAllText(Path.Combine(other, "x.stl"), Stl.Replace("solid t", "solid x"));
+        using var stats = new Xandrite.Library.Logging.FileLog(f.Location.StatisticsFile);
+        var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), statistics: stats);
+        vm.Initialize();
+        vm.ShowStatistics();
+        Assert.Null(f.Shell.OpenedFile);   // nothing recorded yet: a message instead
+        Assert.Contains(f.Shell.Messages, m => m.StartsWith("Nothing has been recorded yet", StringComparison.Ordinal));
+        try
+        {
+            vm.ArchiveRead32768 = true;
+            Assert.Equal(32768, vm.ArchiveReadKb);
+            f.Shell.FolderToPick = f.Models;
+            await vm.AddFolderAsync();
+            f.Shell.FolderToPick = other;
+            await vm.AddFolderAsync();
+            await vm.RescanAsync(null);
+        }
+        finally
+        {
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = Xandrite.Library.Scanning.ArchiveFiles.DefaultReadBufferBytes;
+        }
+
+        vm.ShowStatistics();
+        Assert.Equal(f.Location.StatisticsFile, f.Shell.OpenedFile);
+        var lines = File.ReadAllLines(f.Location.StatisticsFile);
+        Assert.Equal(4, lines.Count(l => l.Contains(" scan root=")));   // two when added, two in the rescan
+        string rescan = Assert.Single(lines, l => l.Contains(" rescan "));
+        Assert.Contains(" folders=2 ", rescan);
+        Assert.Contains(" files=3 ", rescan);
+        Assert.Contains(" archive_read_kb=32768 ", rescan);
+        Assert.Matches(@" took=[\d.]+s ", rescan);
+        foreach (var scan in lines.Where(l => l.Contains(" scan root="))) Assert.Contains(" archive_read_kb=32768 ", scan);
+    }
+
+    /// <summary>Hands over one model, then waits for the test before handing over the next.</summary>
+    private sealed class GatedZipReader(TaskCompletionSource gate) : IArchiveReader
+    {
+        public bool CanRead(string archivePath) => archivePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+
+        public async Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation)
+        {
+            await onEntry(Entry("first/a.stl"));
+            await gate.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellation);
+            await onEntry(Entry("second/b.stl"));
+            return 0;
+        }
+
+        private static ArchiveEntry Entry(string name)
+        {
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(Stl.Replace("solid t", "solid " + name));
+            return new ArchiveEntry(name, "stl", bytes.Length, 0, null, () => new MemoryStream(bytes));
+        }
+
+        public Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation) => throw new NotSupportedException();
+    }
+
+    private static IEnumerable<FolderNodeViewModel> AllNodes(LibraryViewModel vm) => vm.Folders.SelectMany(f => f.SelfAndDescendants());
+
+    [Fact]
+    public async Task FoldersAppearInTheTreeWhileTheScanIsStillGoing()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        File.WriteAllText(Path.Combine(f.Models, "kit.zip"), "read by the test's reader");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), new ModelSource([new GatedZipReader(gate)]))
+        {
+            TreeRefreshEvery = TimeSpan.Zero,
+        };
+        vm.Initialize();
+        bool sawFirstWhileScanning = false;
+        vm.TreeUpdated += () =>
+        {
+            if (!vm.IsScanning || !AllNodes(vm).Any(n => n.Path?.EndsWith("first", StringComparison.Ordinal) == true)) return;
+            sawFirstWhileScanning = true;
+            gate.TrySetResult();   // only now does the scan go on to the second folder
+        };
+
+        f.Shell.FolderToPick = f.Models;
+        await vm.AddFolderAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.True(sawFirstWhileScanning);
+        Assert.Contains(AllNodes(vm), n => n.Path?.EndsWith("second", StringComparison.Ordinal) == true);   // and the rest once it finished
+    }
+
+    [Fact]
+    public async Task RefreshingTheTreeKeepsItsNodesSoExpandedFoldersStayOpen()
+    {
+        var f = new Fixture(files: 4);
+        await using var cleanup = f;
+        await f.AddModelsFolder();
+        var root = f.Vm.Folders[1];
+        var sub = Assert.Single(root.Children);
+        sub.IsExpanded = true;
+        Assert.Equal(2, sub.Count);
+
+        Directory.CreateDirectory(Path.Combine(f.Models, "sub", "deeper"));
+        File.WriteAllText(Path.Combine(f.Models, "sub", "deeper", "new.stl"), Stl.Replace("solid t", "solid new"));
+        Directory.CreateDirectory(Path.Combine(f.Models, "aaa"));
+        File.WriteAllText(Path.Combine(f.Models, "aaa", "first.stl"), Stl.Replace("solid t", "solid first"));
+        await f.Vm.RescanAsync(null);
+
+        Assert.Same(root, f.Vm.Folders[1]);
+        Assert.Same(sub, f.Vm.Folders[1].Children[1]);   // "aaa" went in before it
+        Assert.Equal("aaa", root.Children[0].Name);
+        Assert.True(sub.IsExpanded);
+        Assert.Equal(3, sub.Count);
+        Assert.Equal("deeper", Assert.Single(sub.Children).Name);
+        Assert.Equal(6, f.Vm.Folders[0].Count);   // All files
+
+        Directory.Delete(Path.Combine(f.Models, "aaa"), recursive: true);
+        f.Vm.Folders[1].Children[0].IsSelected = true;   // the folder about to go
+        await f.Vm.RescanAsync(null);
+        Assert.DoesNotContain(root.Children, n => n.Name == "aaa");
+        Assert.True(f.Vm.Folders[0].IsSelected);   // back to All files
+    }
+
+    [Fact]
+    public async Task TheThumbnailStatusShowsCountsButNotTheFileBeingDrawn()
+    {
+        var f = new Fixture(files: 2);
+        await using var cleanup = f;
+        await f.AddModelsFolder();
+        var status = new ThumbnailQueueStatus(true, false, null, 2, 1, 0, 0, Path.Combine(f.Models, "m00.stl"), new ThumbnailCounts(1, 0, 1));
+        Assert.Equal("Drawing thumbnails · 1 of 2", LibraryViewModel.DescribeThumbnails(status, ""));
+    }
+
+    [Fact]
+    public async Task TheArchiveReadSizeIsSavedAndUsedEvenWithoutDeveloperMode()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        try
+        {
+            Assert.Equal(1024, f.Vm.ArchiveReadKb);   // 1 MB unless chosen otherwise
+            Assert.True(f.Vm.ArchiveRead1024);
+            f.Vm.ArchiveRead256 = true;
+            Assert.Equal(256 * 1024, Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes);
+            Assert.False(f.Vm.ArchiveRead1024);
+            Assert.Equal("256", f.Db.GetSetting(LibraryViewModel.ArchiveReadSetting));
+
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = 64 * 1024;
+            var normal = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher());
+            normal.Initialize();                       // started normally: the saved size still applies
+            Assert.Equal(256 * 1024, Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes);
+        }
+        finally
+        {
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = Xandrite.Library.Scanning.ArchiveFiles.DefaultReadBufferBytes;
+        }
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 namespace Xandrite.Library;
 
 /// <summary>
@@ -19,6 +20,9 @@ public sealed record LibraryLocation(string DataFolder)
 
     /// <summary>The log: logs\xandrite.log, with up to five older files beside it (xandrite.log.1 …).</summary>
     public string LogFile => Path.Combine(DataFolder, "logs", "xandrite.log");
+
+    /// <summary>The statistics file: logs\statistics.log, one line for each scan and each thumbnail run.</summary>
+    public string StatisticsFile => Path.Combine(DataFolder, "logs", "statistics.log");
 
     public static LibraryLocation Default() =>
         new(Environment.GetEnvironmentVariable("XANDRITE_NET_DATA") is { Length: > 0 } custom
@@ -106,8 +110,8 @@ public static class ElectronImport
                     try
                     {
                         string temp = destination + ".importing";
-                        await using (var from = new FileStream(files[i], FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, useAsync: true))
-                        await using (var to = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+                        await using (var from = DevLog.OpenRead(files[i], 1 << 16, FileOptions.Asynchronous, "import"))
+                        await using (var to = DevLog.Open(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous, "import"))
                             await from.CopyToAsync(to, cancellation);
                         File.Move(temp, destination, overwrite: false);   // a newer image drawn meanwhile wins
                         copied++;

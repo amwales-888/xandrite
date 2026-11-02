@@ -7,6 +7,28 @@ Xandrite measures where scans and thumbnail runs spend their time and writes it 
 Times added up over several workers can be larger than the wall-clock time; `parallel` says how many workers were
 busy on average. A rate shown as `-` means the time was too short to measure, which is good news.
 
+## Comparing runs: the statistics file
+
+The log is detailed and rolls over after about 60 MB, so last month's scan is soon gone from it. For comparing runs
+over time, each finished run also adds one line to a separate, small file:
+**Preferences (the gear) → Show statistics**, or `%APPDATA%\Xandrite.NET\logs\statistics.log`. It holds years of
+history (2 MB, then one older file). A line is a `WARN` when the run was cancelled or had problems.
+
+```
+2026-11-01T22:13:05.120+00:00 INFO  scan root=\\nas\models result=finished started=2026-11-01T19:02:11 ended=2026-11-01T22:13:05 took=3h10m54s duration_s=11454.2 files=67526 unchanged=0 read=67526 new=67492 … archive_read_kb=1024 …
+2026-11-02T04:41:17.502+00:00 INFO  thumbnails result=finished started=2026-11-01T22:13:05 ended=2026-11-02T04:41:17 took=6h28m12s … paused=12m03s working=6h16m09s made=51382 failed=43 …
+```
+
+| Line | Fields |
+|---|---|
+| `scan` (each folder scanned) | `root`, `result` (finished or cancelled), `started`, `ended`, `took` and `duration_s` (start of the scan to its end); what it found: `files`, `unchanged` (not read again), `read`, `new`, `moved`, `missing`, `duplicate_groups`, `archives`, `nested_archives`, `problems`; how fast: `files_per_s`, `read_mb`, `read_mb_s`, `archive_reads` and `average_read_kb` (reads of archive files, and their average size); the set-up: `archive_read_kb` (the **Archive read size** in force), `search_archives`, `workers`, `folder_on` (network, local, removable or optical); `previous_scan` and `since_previous` (when this folder was last scanned completely, and how long before); `version` and `cores`. |
+| `rescan` (Rescan all, with several folders) | The whole rescan: `result`, `folders`, `started`, `ended`, `took`, `duration_s`, and the totals `files`, `unchanged`, `read`, `new`, `moved`, `missing`, `problems`, `archive_read_kb`. |
+| `thumbnails` (each thumbnail run) | `result` (finished, stopped or stopped by an error), `started`, `ended`, `took` and `duration_s` (the first thumbnail started to the last one finished), `paused` and `working` (time paused with **Pause**, or after a graphics problem, and the rest), `made`, `failed`, `skipped`, `waiting_at_start` and `waiting_at_end` (models still to draw), `per_minute` (made per minute of working time), `read_mb`, `read_mb_s`, `slow_reads`, `speed`, `workers`, `archive_read_kb`, `version`, `cores`. A run that finds nothing to draw adds no line. |
+
+To try a different **Archive read size**, rescan the same folder with each size and compare the `took`, `read_mb_s`
+and `archive_reads` of the `scan` lines. A rescan of unchanged files reads almost nothing, so the read size only
+shows on a scan that reads archives (a new folder, or after the archives changed).
+
 ## While a scan runs: `scan.progress` (every 30 seconds)
 
 ```
@@ -87,3 +109,59 @@ largest of them is where the run's time went. Slow single reads are logged as `t
 - **CPU-bound:** `other_ms` (decompressing) or `models_ms` larger than `read_ms`, and `parallel` near 4. More workers
   would help; this is something Xandrite can change.
 - **Database-bound:** `db_ms` close to `wall_ms`.
+
+## Developer logging
+
+For tracking down problems with files, archives or threads, Xandrite has extra logging that is only offered when it
+is started with `--developer`:
+
+```
+"%LOCALAPPDATA%\Xandrite.NET\Xandrite.exe" --developer
+dotnet run --project src/Xandrite -- --developer           (from a build)
+```
+
+**Preferences (the gear) → Developer** then has five switches, all off at first. They are remembered, but only put
+in force when the app is started with `--developer` again, so they never run unnoticed. Everything goes to the normal
+log file; `developer.options` at start-up records which are on.
+
+| Switch | What it logs |
+|---|---|
+| **Log archives opened and closed** | `archive.open path=… kind=zip\|7z\|rar parts=…` and `archive.close … ms=…`: one pair per archive, a split `.7z.001…` or multi-volume `.part1.rar…` set counting as one (`parts=` says how many files). |
+| **Log archive reads, seeks and writes** | Very detailed. Every call on an archive's files: `archive.read path=… at=… asked=… got=… us=…` (where in the file, bytes asked for and received, microseconds) and `archive.seek path=… from=… to=… origin=begin\|current\|end offset=…`, on each part of a split set and each RAR volume. For 7-Zip, each item it goes through: `archive.item … index=… entry=… wanted=true\|false` (an unwanted item in a solid block is still decompressed), `archive.write … index=… bytes=… total=…` for each piece of decompressed content handed over, and `archive.item.end … result=… bytes=… ms=…`. For zip, `archive.entry path=… entry=… bytes=… reads=… ms=…` for each entry read. |
+| **Log files opened and closed** | `file.open path=… access=read\|write purpose=… open_ms=…` and `file.close … read=… written=… open_ms=…` (bytes moved while it was open, and how long), `file.open_failed … message=…`. `purpose` says why: `hash`, `zip`, `archive`, `archive part`, `rar volume`, `model`, `thumbnail`, `tile image`, `viewer`, `export`, `download`, `import`. The log file itself is not included. |
+| **Log threads started and ended** | `work.start name=… tid=… pool=true` and `work.end name=… ms=… tid=… start_tid=…` for each piece of background work, plus `pool.thread.start` / `pool.thread.stop` / `pool.thread.retire os_tid=… active=…` as .NET's thread pool adds and retires the threads that run it. |
+| **Thread id on every log line** | `tid=…` at the end of every line: the managed id of the thread that wrote it. |
+
+Work runs on the .NET thread pool, and asynchronous work can move to another pool thread at each `await`, so a
+`work.end` can have a different `tid` from its `work.start` (`start_tid` gives the first). The named work is:
+`scan`, `scan.progress`, `scan.hash`, `scan.archive`, `thumbs.run`, `thumbs.worker.N`, `thumbs.archive_read`,
+`7z.scan`, `7z.read`, `7z.read_many`, `viewer.load`, `viewer.frame`, `viewer.thumbnail`, `viewer.save_view`,
+`tile.decode` and `import.thumbnails`.
+
+These logs grow quickly (one line or two per file and per thumbnail); the log keeps about 60 MB, so turn them off
+again when you are done.
+
+### Archive read size
+
+Archive files are read from the disk or share in pieces of **1 MB** by default. Each decompressor asks for much less
+at a time (the zip reader asks for 8 KB, 7-Zip for up to 256 KB, RAR for small headers), and those requests are met
+from the 1 MB piece already read, so a share sees a few large reads rather than many small round trips.
+
+**Preferences (the gear) → Developer → Archive read size** offers 64 KB, 256 KB, 1 MB, 4 MB, 12 MB, 16 MB and 32 MB. Unlike the logging
+switches, the chosen size applies whether or not the app was started with `--developer`; the menu is only shown
+there to keep it out of the way. `scan.start` and `thumbs.start` record it as `archive_read_kb=…`, and with
+**Log archive reads, seeks and writes** on, each `archive.read … asked=` line shows a read of that size (smaller only
+at the end of a file). Compare `archive_read_calls` and `read_mb_s` in `scan.metrics` between runs to see what a
+size does on your network, or the `scan` and `thumbnails` lines of the statistics file, which record the size too.
+
+Each archive being read holds one buffer of this size, and several are read at once (one per scan worker, one per
+thumbnail worker), so 32 MB with 24 thumbnail workers can use about 800 MB of memory. Larger is not always faster:
+once each read is big enough to keep the disk or network busy, more only costs memory. Measured on a local SSD
+(1,563 models in 20 zips, about 20 GB), 1 MB was quickest for both scanning and thumbnails; 64 KB took half as long
+again, and 12 MB and 32 MB were slower than 1 MB. A slow network share may do better with 4 MB, since each read is a
+round trip.
+
+Scans and thumbnail runs both read each archive once, from front to back, so a larger size reads little more than
+the archive itself: at most one buffer's worth past the last model needed, and through files that are not models
+(PDFs, pictures) rather than jumping over them. Up to version 0.3.0, thumbnail runs opened a zip again for every
+model in it, so each model's first read filled a whole buffer; with 32 MB they read 2.7 times the size of the zips.
