@@ -51,7 +51,7 @@ public interface IArchiveReader
     Task ReadEntriesAsync(string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes, Func<EntryRead, Task> onEntry, CancellationToken cancellation) =>
         ReadEntriesOneByOneAsync(this, archivePath, entryNames, maxBytes, onEntry, cancellation);
 
-    /// <summary>For archives that can jump straight to an entry (zip): the entries one by one.</summary>
+    /// <summary>For readers without a one-pass read: the entries one by one, each with <see cref="ReadEntryAsync"/>.</summary>
     protected static async Task ReadEntriesOneByOneAsync(IArchiveReader reader, string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes,
         Func<EntryRead, Task> onEntry, CancellationToken cancellation)
     {
@@ -145,17 +145,72 @@ public sealed class ZipArchiveReader : IArchiveReader
         return nested;
     }
 
-    public async Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation)
+    /// <summary>
+    /// Opens the zip once and reads the entries asked for in the order they are stored, so the file is read from front
+    /// to back. Opening it again for each entry read its directory every time and threw away most of each read
+    /// buffer: with a 32 MB buffer a thumbnail run read 2.7 times the size of the zips.
+    /// </summary>
+    public async Task ReadEntriesAsync(string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes, Func<EntryRead, Task> onEntry, CancellationToken cancellation)
     {
-        Stream stream;
+        cancellation.ThrowIfCancellationRequested();
+        var stream = OpenForReading(archivePath);
+        await using (stream)
+        {
+            using var opened = DevLog.Archive(archivePath, "zip");
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
+            var wanted = new HashSet<string>(entryNames, StringComparer.Ordinal);
+            foreach (var entry in zip.Entries)   // the directory's order, which is the order of the file
+            {
+                if (wanted.Count == 0) break;
+                string name = NameOf(entry);
+                if (!wanted.Remove(name)) continue;
+                cancellation.ThrowIfCancellationRequested();
+                EntryRead read;
+                if (entry.Length > maxBytes)
+                {
+                    read = new EntryRead(name, null, Gone: false, Problem: "The file is too large to read from the zip.");
+                }
+                else
+                {
+                    try
+                    {
+                        read = new EntryRead(name, await ReadAllAsync(entry, archivePath, name, cancellation), Gone: false, Problem: null);
+                    }
+                    catch (InvalidDataException e)
+                    {
+                        read = new EntryRead(name, null, Gone: false, Problem: e.Message);
+                    }
+                }
+                await onEntry(read);
+            }
+            foreach (var name in entryNames.Where(wanted.Contains).ToList())   // no longer in the zip
+                await onEntry(new EntryRead(name, null, Gone: true, Problem: null));
+        }
+    }
+
+    private static Stream OpenForReading(string archivePath)
+    {
         try
         {
-            stream = ArchiveFiles.OpenRead(archivePath, "zip", FileOptions.Asynchronous);
+            return ArchiveFiles.OpenRead(archivePath, "zip", FileOptions.Asynchronous);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
             throw new ModelGoneException("The zip is no longer there.", e);
         }
+    }
+
+    private static async Task<byte[]> ReadAllAsync(ZipArchiveEntry entry, string archivePath, string name, CancellationToken cancellation)
+    {
+        var bytes = new byte[entry.Length];
+        await using var source = DevLog.ArchiveEntryStream(entry.Open(), archivePath, name);
+        await source.ReadExactlyAsync(bytes, cancellation);
+        return bytes;
+    }
+
+    public async Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation)
+    {
+        var stream = OpenForReading(archivePath);
         await using (stream)
         {
             using var opened = DevLog.Archive(archivePath, "zip");
@@ -163,10 +218,7 @@ public sealed class ZipArchiveReader : IArchiveReader
             var entry = zip.Entries.FirstOrDefault(e => NameOf(e) == entryName)
                 ?? throw new ModelGoneException("That file is no longer in the zip.");
             if (entry.Length > maxBytes) throw new InvalidDataException("The file is too large to read from the zip.");
-            var bytes = new byte[entry.Length];
-            await using var source = DevLog.ArchiveEntryStream(entry.Open(), archivePath, entryName);
-            await source.ReadExactlyAsync(bytes, cancellation);
-            return bytes;
+            return await ReadAllAsync(entry, archivePath, entryName, cancellation);
         }
     }
 }

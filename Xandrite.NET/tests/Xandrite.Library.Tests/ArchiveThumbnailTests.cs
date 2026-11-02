@@ -187,6 +187,32 @@ public class ArchiveThumbnailTests
     }
 
     [Fact]
+    public async Task ZipReadsSeveralEntriesInOnePassAndReportsTheMissingAndTooLargeOnes()
+    {
+        using var lib = new TempLibrary();
+        string zip = lib.WriteZip("kit.zip", new Dictionary<string, string>
+        {
+            ["models/leg.stl"] = "solid leg\n",
+            ["readme.txt"] = "not a model",
+            ["models/sub/arm.3mf"] = "pk arm",
+            ["models/big.stl"] = new string('x', 5000),
+        });
+        var reads = new List<EntryRead>();
+        await new ZipArchiveReader().ReadEntriesAsync(zip, ["models/sub/arm.3mf", "models/gone.stl", "models/leg.stl", "models/big.stl"], 1000,
+            read => { reads.Add(read); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.Equal(["models/leg.stl", "models/sub/arm.3mf", "models/big.stl", "models/gone.stl"], reads.Select(r => r.Name).ToArray());   // as stored, then the missing
+        Assert.Equal("solid leg\n", Encoding.UTF8.GetString(reads[0].Bytes!));
+        Assert.Equal("pk arm", Encoding.UTF8.GetString(reads[1].Bytes!));
+        Assert.Null(reads[2].Bytes);
+        Assert.Contains("too large", reads[2].Problem);
+        Assert.True(reads[3].Gone);
+
+        await Assert.ThrowsAsync<ModelGoneException>(() =>
+            new ZipArchiveReader().ReadEntriesAsync(zip + ".missing", ["models/leg.stl"], 1 << 20, _ => Task.CompletedTask, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task SevenZipReadsSeveralEntriesInOnePassAndReportsTheMissingOnes()
     {
         if (!SevenZipArchiveReader.IsAvailable) return;

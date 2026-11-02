@@ -156,4 +156,12 @@ size does on your network, or the `scan` and `thumbnails` lines of the statistic
 
 Each archive being read holds one buffer of this size, and several are read at once (one per scan worker, one per
 thumbnail worker), so 32 MB with 24 thumbnail workers can use about 800 MB of memory. Larger is not always faster:
-once each read is big enough to keep the network busy, more only costs memory.
+once each read is big enough to keep the disk or network busy, more only costs memory. Measured on a local SSD
+(1,563 models in 20 zips, about 20 GB), 1 MB was quickest for both scanning and thumbnails; 64 KB took half as long
+again, and 12 MB and 32 MB were slower than 1 MB. A slow network share may do better with 4 MB, since each read is a
+round trip.
+
+Scans and thumbnail runs both read each archive once, from front to back, so a larger size reads little more than
+the archive itself: at most one buffer's worth past the last model needed, and through files that are not models
+(PDFs, pictures) rather than jumping over them. Up to version 0.3.0, thumbnail runs opened a zip again for every
+model in it, so each model's first read filled a whole buffer; with 32 MB they read 2.7 times the size of the zips.
