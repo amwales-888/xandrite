@@ -188,13 +188,14 @@ public class DevLogTests
     public async Task ArchiveFilesAreReadInPiecesOfTheReadBufferSize()
     {
         using var lib = new TempLibrary();
-        lib.WriteZip("kit.zip", Enumerable.Range(0, 30).ToDictionary(i => $"m{i}.stl", i => string.Concat(Enumerable.Repeat(Stl.Replace("solid t", "solid " + i), 200))));
+        string zip = lib.WriteZip("kit.zip", Enumerable.Range(0, 30).ToDictionary(i => $"m{i}.stl", i => string.Concat(Enumerable.Repeat(Stl.Replace("solid t", "solid " + i), 200))));
         using var s = new Session(lib, archiveIo: true);
         try
         {
             ArchiveFiles.ReadBufferBytes = 64 * 1024;
             await lib.Scan();
-            var reads = Regex.Matches(s.Text, @" archive\.read path=[^\n]*kit\.zip""? at=\d+ asked=(\d+) got=(\d+)").Select(m => int.Parse(m.Groups[1].Value)).ToList();
+            string path = Regex.Escape("path=" + FileLog.FormatValue(zip));   // not zips other tests are reading meanwhile
+            var reads = Regex.Matches(s.Text, @" archive\.read " + path + @" at=\d+ asked=(\d+) got=(\d+)").Select(m => int.Parse(m.Groups[1].Value)).ToList();
             Assert.True(reads.Count > 0, "no archive reads were logged");
             Assert.All(reads, asked => Assert.Equal(64 * 1024, asked));   // the zip reader asks for 8 KB; the file is read 64 KB at a time
             Assert.Matches(@" scan\.start [^\n]* archive_read_kb=64", ScanLog(lib));   // each scan records the size it used
@@ -237,8 +238,10 @@ public class DevLogTests
             ArchiveFiles.ReadBufferBytes = ArchiveFiles.DefaultReadBufferBytes;
         }
 
-        Assert.Single(Regex.Matches(s.Text, @" archive\.open [^\n]*kit\.zip"));
-        long read = Regex.Matches(s.Text, @" archive\.read path=[^\n]*kit\.zip""? at=\d+ asked=\d+ got=(\d+)").Sum(m => long.Parse(m.Groups[1].Value));
+        // Only this test's zip: other tests running at the same time may be opening zips of their own.
+        string path = Regex.Escape("path=" + FileLog.FormatValue(zip));
+        Assert.Single(Regex.Matches(s.Text, @" archive\.open " + path + " "));
+        long read = Regex.Matches(s.Text, @" archive\.read " + path + @" at=\d+ asked=\d+ got=(\d+)").Sum(m => long.Parse(m.Groups[1].Value));
         Assert.True(read <= size + 2 * 256 * 1024, $"read {read:N0} bytes of a {size:N0}-byte zip");   // the directory at the end, then once through
     }
 
