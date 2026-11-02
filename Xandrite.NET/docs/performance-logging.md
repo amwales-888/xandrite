@@ -154,6 +154,14 @@ was read during that folder's scan), `tree_read_ms` (time reading it from the li
 up the scan's own library work meanwhile) and `tree_show_ms` (time updating the tree on screen). To compare, scan the
 same new folder with the switch on and off and look at `took`, `files_per_s` and `tree_read_ms`.
 
+### Update file list during scans
+
+Also on by default, at the same pace as the folder tree: the list on the right is read again every 2 seconds during a
+scan, so new files appear (waiting for their thumbnails) as they are found. Tiles already shown are kept, with their
+selection, and the grid stays where it was scrolled to. **Preferences (the gear) → Developer → Update file list during
+scans** turns it off, with the same rules as the tree switch. The `scan` lines record `list_updates=on|off`,
+`list_refreshes`, `list_read_ms` (reading the list, on a worker thread) and `list_show_ms` (updating the grid).
+
 ### Archive read size
 
 Archive files are read from the disk or share in pieces of **1 MB** by default. Each decompressor asks for much less

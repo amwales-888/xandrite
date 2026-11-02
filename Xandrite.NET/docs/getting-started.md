@@ -122,8 +122,9 @@ Rescanning is quick: files that haven't changed since the last scan are skipped,
 if it has changed. A scan in progress can be stopped with **Cancel** in the status bar.
 
 While a scan runs, new folders (including the folders inside archives) appear in the folder tree every couple of
-seconds, and the counts beside each folder go up; folders you have opened stay open. The thumbnails themselves are
-listed once the scan has finished.
+seconds, and the counts beside each folder go up; folders you have opened stay open. New files appear in the list on
+the right at the same time, as "Waiting for thumbnail" tiles; what you have selected stays selected, and the list
+stays where you scrolled it.
 
 ### Missing models
 

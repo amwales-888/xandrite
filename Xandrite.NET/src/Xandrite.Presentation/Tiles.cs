@@ -20,7 +20,7 @@ public sealed class TileViewModel : ObservableObject
     }
 
     /// <summary>Position in the current list (for shift-click ranges and arrow keys).</summary>
-    public int Index { get; }
+    public int Index { get; internal set; }
 
     public LocationRow Row
     {

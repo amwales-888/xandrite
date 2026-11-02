@@ -440,6 +440,7 @@
                             <MenuItem Header="Thread id on every log line" IsCheckable="True" IsChecked="{Binding LogThreadIds}" />
                             <Separator />
                             <MenuItem Header="Update folder tree during scans" IsCheckable="True" IsChecked="{Binding UpdateTreeDuringScan}" />
+                            <MenuItem Header="Update file list during scans" IsCheckable="True" IsChecked="{Binding UpdateListDuringScan}" />
                             <MenuItem Header="Archive read size">
                                 <MenuItem Header="64 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead64}" />
                                 <MenuItem Header="256 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead256}" />

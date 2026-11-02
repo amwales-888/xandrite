@@ -21,6 +21,20 @@ public partial class LibraryWindow : Window
         DataContext = vm;
         InitializeComponent();
         _vm.ScrollRequested += ScrollIntoView;
+        _vm.ListRefreshing += RememberScroll;
+        _vm.ListRefreshed += RestoreScroll;
+    }
+
+    private double? _scrollBefore;
+
+    // While a scan adds files to the list, the grid stays where it was scrolled to.
+    private void RememberScroll() => _scrollBefore = FindScrollViewer(TileGrid)?.VerticalOffset;
+
+    private void RestoreScroll()
+    {
+        if (_scrollBefore is not { } offset) return;
+        _scrollBefore = null;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => FindScrollViewer(TileGrid)?.ScrollToVerticalOffset(offset));
     }
 
     /* ---------- the grid ---------- */
