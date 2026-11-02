@@ -551,35 +551,100 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _selectedFolder, value)) Reload(); }
     }
 
-    private void LoadTree()
-    {
-        var expanded = Folders.SelectMany(f => f.SelfAndDescendants()).Where(f => f.IsExpanded && f.Path is not null).Select(f => f.Path!).ToHashSet();
-        var stats = _db.GetStats();
-        var tree = _db.GetFolderTree();
-        HasRoots = tree.Count > 0;
+    /// <summary>Raised after the tree has been brought up to date (for tests).</summary>
+    internal event Action? TreeUpdated;
 
-        Folders.Clear();
-        var all = new FolderNodeViewModel("All files", null, (int)stats.Files, isRoot: false, OnFolderSelected);
-        Folders.Add(all);
-        FolderNodeViewModel Map(FolderNode node, bool isRoot)
-        {
-            var vm = new FolderNodeViewModel(node.Name, node.Path, node.Count, isRoot, OnFolderSelected)
-            {
-                IsExpanded = isRoot && expanded.Count == 0 || expanded.Contains(node.Path),
-            };
-            foreach (var child in node.Children) vm.Children.Add(Map(child, false));
-            return vm;
-        }
-        foreach (var root in tree) Folders.Add(Map(root, true));
+    private int _treeVersion;   // goes up each time the tree is brought up to date (on the UI thread)
+
+    /// <summary>How often the folder tree is brought up to date while a scan runs.</summary>
+    public TimeSpan TreeRefreshEvery { get; init; } = TimeSpan.FromSeconds(2);
+
+    private void LoadTree() => ApplyTree(_db.GetFolderTree(), (int)_db.GetStats().Files);
+
+    /// <summary>
+    /// Brings the tree up to date in place: counts change, new folders appear in order, folders that are gone go.
+    /// Nodes that stay are the same objects, so what is expanded, selected and scrolled to stays as it was. Returns
+    /// true if the selected folder has gone (and "All files" is now selected; the caller reloads the list).
+    /// </summary>
+    private bool ApplyTree(IReadOnlyList<FolderNode> tree, int allFiles)
+    {
+        _treeVersion++;
+        HasRoots = tree.Count > 0;
+        bool anyExpanded = Folders.Any(f => f.SelfAndDescendants().Any(n => n.IsExpanded));
+        if (Folders.Count == 0 || Folders[0].Path is not null)
+            Folders.Insert(0, new FolderNodeViewModel("All files", null, allFiles, isRoot: false, OnFolderSelected));
+        var all = Folders[0];
+        all.Count = allFiles;
+        Merge(Folders, tree, offset: 1, isRoot: true, expandNew: !anyExpanded);
 
         // Select the same folder again without reloading (the caller reloads).
         var selected = Folders.SelectMany(f => f.SelfAndDescendants()).FirstOrDefault(f => f.Path == _selectedFolder) ?? all;
-        if (selected.Path != _selectedFolder) _selectedFolder = selected.Path;
+        bool gone = selected.Path != _selectedFolder;
+        if (gone) _selectedFolder = selected.Path;
         _loading = true;
         try { selected.IsSelected = true; }
         finally { _loading = false; }
         OnPropertyChanged(nameof(SelectedFolder));
+        TreeUpdated?.Invoke();
+        return gone;
     }
+
+    /// <summary>Makes <paramref name="nodes"/> (from <paramref name="offset"/> on) match <paramref name="folders"/>, keeping the nodes that stay.</summary>
+    private void Merge(ObservableCollection<FolderNodeViewModel> nodes, IReadOnlyList<FolderNode> folders, int offset, bool isRoot, bool expandNew)
+    {
+        var existing = new Dictionary<string, FolderNodeViewModel>(StringComparer.Ordinal);
+        for (int i = offset; i < nodes.Count; i++) existing.TryAdd(nodes[i].Path!, nodes[i]);
+        for (int i = 0; i < folders.Count; i++)
+        {
+            var folder = folders[i];
+            int at = offset + i;
+            if (existing.Remove(folder.Path, out var node))
+            {
+                node.Count = folder.Count;
+                int now = nodes.IndexOf(node);
+                if (now != at) nodes.Move(now, at);
+            }
+            else
+            {
+                node = new FolderNodeViewModel(folder.Name, folder.Path, folder.Count, isRoot, OnFolderSelected) { IsExpanded = isRoot && expandNew };
+                nodes.Insert(at, node);
+            }
+            Merge(node.Children, folder.Children, 0, isRoot: false, expandNew: false);
+        }
+        while (nodes.Count > offset + folders.Count) nodes.RemoveAt(nodes.Count - 1);   // what is left over has gone
+    }
+
+    /// <summary>
+    /// While a scan runs: reads the tree on a worker thread, then shows it, unless the tree has been loaded since
+    /// (the scan finished), so an older tree never replaces a newer one. One at a time.
+    /// </summary>
+    private void RefreshTreeDuringScan()
+    {
+        int version = Volatile.Read(ref _treeVersion);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var tree = _db.GetFolderTree();
+                int files = tree.Sum(r => r.Count);
+                _ui.Post(() =>
+                {
+                    if (_treeVersion != version) return;
+                    if (ApplyTree(tree, files)) Reload();
+                });
+            }
+            catch (Exception e)
+            {
+                _log.Warn("tree.refresh_failed", ("message", e.Message));   // the tree is brought up to date when the scan ends anyway
+            }
+            finally
+            {
+                Volatile.Write(ref _treeRefreshing, 0);
+            }
+        });
+    }
+
+    private int _treeRefreshing;
 
     private void OnFolderSelected(FolderNodeViewModel node)
     {
@@ -1067,6 +1132,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (roots.Count > 1) _log.Info("rescan.start", ("folders", roots.Count));
         var summaries = new List<ScanSummary>();
         var throttle = Stopwatch.StartNew();
+        var treeClock = Stopwatch.StartNew();
         try
         {
             for (int i = 0; i < roots.Count && !cancel.IsCancellationRequested; i++)
@@ -1077,6 +1143,12 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 {
                     summaries.Add(await scanner.ScanAsync(roots[i], SearchInsideArchives, p =>
                     {
+                        // Folders appear in the tree as they are found, not only when the scan ends.
+                        if (treeClock.Elapsed >= TreeRefreshEvery && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0)
+                        {
+                            treeClock.Restart();
+                            RefreshTreeDuringScan();
+                        }
                         if (throttle.ElapsedMilliseconds < 150) return;
                         throttle.Restart();
                         _ui.Post(() => ScanText = $"{prefix}{p.Found:N0} found, {p.Hashed:N0} read, {p.Reused:N0} unchanged");
@@ -1237,13 +1309,22 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanResumeThumbnails));
         _failedCount = s.Counts.Failed;
         OnPropertyChanged(nameof(HasFailedThumbnails));
+        ThumbnailText = DescribeThumbnails(s, SpeedNote);
+    }
+
+    /// <summary>
+    /// The status bar's thumbnail text: counts only. Not the file being drawn, which changed many times a second and
+    /// made the status bar jump about.
+    /// </summary>
+    internal static string DescribeThumbnails(ThumbnailQueueStatus s, string speedNote)
+    {
         long all = s.Counts.Ok + s.Counts.Pending + s.Counts.Failed;
         string failed = s.Counts.Failed > 0 ? $" · {s.Counts.Failed:N0} failed" : "";
-        ThumbnailText = s switch
+        return s switch
         {
             { Blocked: { } blocked } => $"Thumbnails stopped: {blocked} Resume to try again.",
             { Paused: true } => $"Thumbnails paused · {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
-            { Running: true } => $"Drawing thumbnails{SpeedNote} · {s.Counts.Ok:N0} of {all:N0}{failed}" + (s.Current is { } c ? $" · {c}" : ""),
+            { Running: true } => $"Drawing thumbnails{speedNote} · {s.Counts.Ok:N0} of {all:N0}{failed}",
             _ when s.Counts.Pending > 0 => $"Thumbnails: {s.Counts.Ok:N0} of {all:N0} drawn{failed}",
             _ when all > 0 => $"Thumbnails: all {s.Counts.Ok:N0} drawn{failed}",
             _ => "",

@@ -534,7 +534,7 @@
                 <Button DockPanel.Dock="Right" Content="Rescan All" Padding="10,2" Margin="8,0,0,0" Command="{Binding RescanAllCommand}"
                         Visibility="{Binding HasRoots, Converter={StaticResource Visible}}" />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <TextBlock Text="{Binding ThumbnailText}" VerticalAlignment="Center" Foreground="#4A5A66" />
+                    <TextBlock Text="{Binding ThumbnailText}" VerticalAlignment="Center" Foreground="#4A5A66" Typography.NumeralAlignment="Tabular" />
                     <Button Content="Pause" Padding="8,1" Margin="6,0,0,0" Command="{Binding PauseThumbnailsCommand}"
                             Visibility="{Binding CanPauseThumbnails, Converter={StaticResource Visible}}" />
                     <Button Content="Resume" Padding="8,1" Margin="6,0,0,0" Command="{Binding ResumeThumbnailsCommand}"
@@ -549,7 +549,8 @@
                             ToolTip="Show only the models found in more than one place"
                             Visibility="{Binding CopiesText, Converter={StaticResource IfText}}" />
                     <TextBlock Text="{Binding ListText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" />
-                    <TextBlock Text="{Binding ScanText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" TextTrimming="CharacterEllipsis" MaxWidth="520" />
+                    <TextBlock Text="{Binding ScanText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" TextTrimming="CharacterEllipsis" MaxWidth="520"
+                               Typography.NumeralAlignment="Tabular" />
                     <Button Content="Cancel" Padding="8,1" Margin="6,0,0,0" Command="{Binding CancelScanCommand}"
                             Visibility="{Binding IsScanning, Converter={StaticResource Visible}}" />
                     <TextBlock Text="{Binding ActivityText}" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#4A5A66" />
