@@ -182,4 +182,38 @@ public class DevLogTests
         await new LibraryScanner(lib.Db).ScanAsync(lib.Root);   // nothing changed, and nothing more logged
         Assert.Equal(before, Regex.Matches(s.Text, "archive\\.read").Count);
     }
+
+    [Fact]
+    public async Task ArchiveFilesAreReadInPiecesOfTheReadBufferSize()
+    {
+        using var lib = new TempLibrary();
+        lib.WriteZip("kit.zip", Enumerable.Range(0, 30).ToDictionary(i => $"m{i}.stl", i => string.Concat(Enumerable.Repeat(Stl.Replace("solid t", "solid " + i), 200))));
+        using var s = new Session(lib, archiveIo: true);
+        try
+        {
+            ArchiveFiles.ReadBufferBytes = 64 * 1024;
+            await lib.Scan();
+            var reads = Regex.Matches(s.Text, @" archive\.read path=[^\n]*kit\.zip""? at=\d+ asked=(\d+) got=(\d+)").Select(m => int.Parse(m.Groups[1].Value)).ToList();
+            Assert.True(reads.Count > 0, "no archive reads were logged");
+            Assert.All(reads, asked => Assert.Equal(64 * 1024, asked));   // the zip reader asks for 8 KB; the file is read 64 KB at a time
+            Assert.Matches(@" scan\.start [^\n]* archive_read_kb=64", ScanLog(lib));   // each scan records the size it used
+        }
+        finally
+        {
+            ArchiveFiles.ReadBufferBytes = ArchiveFiles.DefaultReadBufferBytes;
+        }
+        ArchiveFiles.ReadBufferBytes = 1;   // out of range: kept between 4 KB and 16 MB
+        Assert.Equal(4 * 1024, ArchiveFiles.ReadBufferBytes);
+        ArchiveFiles.ReadBufferBytes = ArchiveFiles.DefaultReadBufferBytes;
+        Assert.Equal(1 << 20, ArchiveFiles.ReadBufferBytes);
+    }
+
+    /// <summary>The scanner's own log line for the last scan (TempLibrary scans without a log, so scan again with one).</summary>
+    private static string ScanLog(TempLibrary lib)
+    {
+        using var log = new FileLog(Path.Combine(lib.Dir, "logs", "scan.log"));
+        new LibraryScanner(lib.Db) { Log = log }.ScanAsync(lib.Root).GetAwaiter().GetResult();
+        log.Flush();
+        return File.ReadAllText(log.Path!);
+    }
 }

@@ -339,6 +339,31 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task TheArchiveReadSizeIsSavedAndUsedEvenWithoutDeveloperMode()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        try
+        {
+            Assert.Equal(1024, f.Vm.ArchiveReadKb);   // 1 MB unless chosen otherwise
+            Assert.True(f.Vm.ArchiveRead1024);
+            f.Vm.ArchiveRead256 = true;
+            Assert.Equal(256 * 1024, Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes);
+            Assert.False(f.Vm.ArchiveRead1024);
+            Assert.Equal("256", f.Db.GetSetting(LibraryViewModel.ArchiveReadSetting));
+
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = 64 * 1024;
+            var normal = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher());
+            normal.Initialize();                       // started normally: the saved size still applies
+            Assert.Equal(256 * 1024, Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes);
+        }
+        finally
+        {
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = Xandrite.Library.Scanning.ArchiveFiles.DefaultReadBufferBytes;
+        }
+    }
+
+    [Fact]
     public void DateChipsReadAsAPhrase()
     {
         var modified = FilterOptions.AgeBases.Single(b => b.Value == AgeBasis.Modified);

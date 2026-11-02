@@ -71,11 +71,11 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 var (parts, problem) = FolderWalker.ArchiveParts(name, names);
                 if (problem is not null) throw new InvalidDataException(problem);
                 partCount = parts.Count;
-                stream = IoMeter.Wrap(new SplitStream(parts.Select(p => Path.Combine(folder, p)).ToList()), path);
+                stream = ArchiveFiles.Buffered(new SplitStream(parts.Select(p => Path.Combine(folder, p)).ToList()));
             }
             else
             {
-                stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(path, 1 << 16, purpose: "archive"), path), path);
+                stream = ArchiveFiles.OpenRead(path, "archive");
             }
 
             byte format;

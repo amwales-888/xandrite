@@ -204,7 +204,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             Directory.CreateDirectory(_location.ThumbnailFolder);
             ForgetMissingImages();
-            Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()));
+            Log.Info("thumbs.start", ("pending", _db.GetThumbnailCounts(Look.RenderVersion).Pending), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()),
+                ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
             _metrics = new RunMetrics
             {
                 Io = new IoMeter
