@@ -413,7 +413,7 @@ public class LibraryViewModelTests
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), new ModelSource([new GatedZipReader(gate)]))
         {
-            TreeRefreshEvery = TimeSpan.Zero,
+            ScanRefreshEvery = TimeSpan.Zero,
         };
         vm.Initialize();
         bool sawFirstWhileScanning = false;
@@ -442,7 +442,7 @@ public class LibraryViewModelTests
             var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), statistics: stats)
             {
                 DeveloperMode = developer,
-                TreeRefreshEvery = TimeSpan.Zero,
+                ScanRefreshEvery = TimeSpan.Zero,
             };
             vm.Initialize();
             return vm;
@@ -468,7 +468,72 @@ public class LibraryViewModelTests
         var on = Start(developer: false);
         await on.RescanAsync(null);
         stats.Flush();
-        Assert.Matches(@" tree_updates=on tree_refreshes=\d+ tree_read_ms=\d+ tree_show_ms=\d+$", File.ReadAllLines(f.Location.StatisticsFile).Last());
+        Assert.Matches(@" tree_updates=on tree_refreshes=\d+ tree_read_ms=\d+ tree_show_ms=\d+ list_updates=on ", File.ReadAllLines(f.Location.StatisticsFile).Last());
+    }
+
+    [Fact]
+    public async Task FilesAppearInTheListWhileTheScanIsStillGoing_AndKeepTheirSelection()
+    {
+        var f = new Fixture();
+        await using var cleanup = f;
+        File.WriteAllText(Path.Combine(f.Models, "kit.zip"), "read by the test's reader");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), new ModelSource([new GatedZipReader(gate)]))
+        {
+            ScanRefreshEvery = TimeSpan.Zero,
+        };
+        vm.Initialize();
+        TileViewModel? first = null;
+        int refreshing = 0, refreshed = 0;
+        vm.ListRefreshing += () => refreshing++;
+        vm.ListRefreshed += () =>
+        {
+            refreshed++;
+            if (first is not null || !vm.IsScanning) return;
+            first = vm.Tiles.FirstOrDefault(t => t.Row.Path.EndsWith("a.stl", StringComparison.Ordinal));
+            if (first is null) return;
+            Assert.Equal("Waiting for thumbnail", first.PlaceholderText);
+            vm.Click(first, ctrl: false, shift: false);   // selected while the scan goes on
+            gate.TrySetResult();
+        };
+
+        f.Shell.FolderToPick = f.Models;
+        await vm.AddFolderAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.NotNull(first);
+        Assert.Equal(refreshing, refreshed);   // the view is told before and after, to keep its scroll position
+        Assert.Equal(2, vm.Tiles.Count);
+        Assert.Contains(first, vm.Tiles);      // the same tile, still selected, after the scan finished
+        Assert.True(first!.IsSelected);
+        Assert.Equal(1, vm.SelectedCount);
+    }
+
+    [Fact]
+    public async Task ListUpdatesDuringScansCanBeSwitchedOffInDeveloperMode()
+    {
+        var f = new Fixture(files: 6);
+        await using var cleanup = f;
+        using var stats = new Xandrite.Library.Logging.FileLog(f.Location.StatisticsFile);
+        var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), statistics: stats)
+        {
+            DeveloperMode = true,
+            ScanRefreshEvery = TimeSpan.Zero,
+        };
+        vm.Initialize();
+        Assert.True(vm.UpdateListDuringScan);
+        vm.UpdateListDuringScan = false;
+        int duringScan = 0;
+        vm.ListRefreshed += () => { if (vm.IsScanning) duringScan++; };
+        f.Shell.FolderToPick = f.Models;
+        await vm.AddFolderAsync();
+        Assert.Equal(0, duringScan);
+        Assert.Equal(6, vm.Tiles.Count);   // listed once the scan ended
+        stats.Flush();
+        Assert.Contains(" list_updates=off list_refreshes=0 ", File.ReadAllLines(f.Location.StatisticsFile).Last());
+
+        var normal = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher());
+        normal.Initialize();
+        Assert.True(normal.UpdateListDuringScan);   // a normal start always updates the list
     }
 
     [Fact]

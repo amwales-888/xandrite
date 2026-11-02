@@ -249,9 +249,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         DevLog.Threads = On(DevThreadsSetting);
         if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
         _treeDuringScan = _db.GetSetting(DevTreeDuringScanSetting, "1") == "1";
+        _listDuringScan = _db.GetSetting(DevListDuringScanSetting, "1") == "1";
         if (DeveloperMode)
             _log.Info("developer.options", ("archives", DevLog.Archives), ("archive_io", DevLog.ArchiveIo), ("files", DevLog.Files), ("threads", DevLog.Threads),
-                ("thread_ids", LogThreadIds), ("tree_during_scan", _treeDuringScan));
+                ("thread_ids", LogThreadIds), ("tree_during_scan", _treeDuringScan), ("list_during_scan", _listDuringScan));
     }
 
     /// <summary>New versions of the app (set by the app; the status bar and the Preferences menu show it).</summary>
@@ -573,8 +574,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
 
     private int _treeVersion;   // goes up each time the tree is brought up to date (on the UI thread)
 
-    /// <summary>How often the folder tree is brought up to date while a scan runs.</summary>
-    public TimeSpan TreeRefreshEvery { get; init; } = TimeSpan.FromSeconds(2);
+    /// <summary>How often the folder tree and the file list are brought up to date while a scan runs.</summary>
+    public TimeSpan ScanRefreshEvery { get; init; } = TimeSpan.FromSeconds(2);
 
     private void LoadTree() => ApplyTree(_db.GetFolderTree(), (int)_db.GetStats().Files);
 
@@ -668,6 +669,59 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
 
     private int _treeRefreshing;
 
+    /// <summary>
+    /// While a scan runs: reads the list on a worker thread, then shows it, keeping the tiles already shown, unless the
+    /// list has been reloaded since (another folder, search or filter, or the scan finished). One at a time.
+    /// </summary>
+    private void RefreshListDuringScan()
+    {
+        _ui.Post(() =>
+        {
+            int version = _listVersion;
+            var query = BuildQuery(DateTimeOffset.Now);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    long started = Stopwatch.GetTimestamp();
+                    var page = _db.List(query);
+                    Interlocked.Add(ref _listReadMs, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                    Interlocked.Increment(ref _listRefreshes);
+                    _ui.Post(() =>
+                    {
+                        if (_listVersion != version || _loading) return;
+                        long shown = Stopwatch.GetTimestamp();
+                        ListRefreshing?.Invoke();
+                        try { ShowPage(page, keepTiles: true); }
+                        finally { ListRefreshed?.Invoke(); }
+                        Interlocked.Add(ref _listShowMs, (long)Stopwatch.GetElapsedTime(shown).TotalMilliseconds);
+                    });
+                }
+                catch (Exception e)
+                {
+                    _log.Warn("list.refresh_failed", ("message", e.Message));   // the list is read again when the scan ends anyway
+                }
+                finally
+                {
+                    Volatile.Write(ref _listRefreshing, 0);
+                }
+            });
+        });
+    }
+
+    public const string DevListDuringScanSetting = "dev.scan.list_updates";
+    private bool _listDuringScan = true;
+
+    /// <summary>
+    /// Developer → Update file list during scans: new files appear in the grid (waiting for their thumbnails) as the
+    /// scan finds them. On unless switched off, and only off when started with --developer.
+    /// </summary>
+    public bool UpdateListDuringScan
+    {
+        get => _listDuringScan;
+        set => SetDeveloperOption(DevListDuringScanSetting, value, v => _listDuringScan = v);
+    }
+
     private void OnFolderSelected(FolderNodeViewModel node)
     {
         if (_loading) return;
@@ -739,14 +793,42 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public void Reload()
     {
         if (_loading) return;
-        var page = _db.List(BuildQuery(DateTimeOffset.Now));
+        _listVersion++;
+        ShowPage(_db.List(BuildQuery(DateTimeOffset.Now)), keepTiles: false);
+    }
+
+    private int _listVersion;   // goes up with each full reload (a new folder, search, filter or order), on the UI thread
+    private int _listRefreshing, _listRefreshes;
+    private long _listReadMs, _listShowMs;
+
+    /// <summary>Raised before and after the list is brought up to date during a scan, so the view can keep its scroll position.</summary>
+    public event Action? ListRefreshing, ListRefreshed;
+
+    /// <summary>
+    /// Shows a page of the list. With <paramref name="keepTiles"/> (during a scan), tiles already shown are kept,
+    /// with their selection and image, and only moved and updated; otherwise the list starts afresh.
+    /// </summary>
+    private void ShowPage(ListPage page, bool keepTiles)
+    {
         bool dated = _sort.Value is SortOrder.Modified or SortOrder.Added;
-        _tiles = page.Rows.Select((row, i) => new TileViewModel(row, i, _location.ThumbnailPath(row.Sha256))
+        string? Caption(LocationRow row) => dated ? Format.Date(_sort.Value == SortOrder.Added ? row.AddedAt : row.ModifiedMs) : null;
+        var kept = new Dictionary<string, TileViewModel>(StringComparer.Ordinal);
+        if (keepTiles) foreach (var tile in _tiles) kept.TryAdd(tile.Row.Path, tile);
+        var anchor = keepTiles && _anchor >= 0 && _anchor < _tiles.Count ? _tiles[_anchor] : null;
+        _tiles = page.Rows.Select((row, i) =>
         {
-            Caption = dated ? Format.Date(_sort.Value == SortOrder.Added ? row.AddedAt : row.ModifiedMs) : null,
+            if (kept.Remove(row.Path, out var tile))
+            {
+                tile.Row = row;
+                tile.Index = i;
+                tile.Caption = Caption(row);
+                return tile;
+            }
+            return new TileViewModel(row, i, _location.ThumbnailPath(row.Sha256)) { Caption = Caption(row) };
         }).ToList();
         _bySha = _tiles.GroupBy(t => t.Row.Sha256).ToDictionary(g => g.Key, g => g.ToList());
-        _anchor = -1;
+        // The last clicked tile stays the anchor for Shift-click if it is still shown.
+        _anchor = anchor is not null && anchor.Index < _tiles.Count && ReferenceEquals(_tiles[anchor.Index], anchor) ? anchor.Index : -1;
         Total = page.Total;
         OnPropertyChanged(nameof(Tiles));
         OnPropertyChanged(nameof(ListText));
@@ -1156,6 +1238,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             [
                 ("tree_updates", _treeDuringScan ? "on" : "off"), ("tree_refreshes", Volatile.Read(ref _treeRefreshes)),
                 ("tree_read_ms", Interlocked.Read(ref _treeReadMs)), ("tree_show_ms", Interlocked.Read(ref _treeShowMs)),
+                ("list_updates", _listDuringScan ? "on" : "off"), ("list_refreshes", Volatile.Read(ref _listRefreshes)),
+                ("list_read_ms", Interlocked.Read(ref _listReadMs)), ("list_show_ms", Interlocked.Read(ref _listShowMs)),
             ],
         };
         var scanClock = Stopwatch.StartNew();
@@ -1173,15 +1257,20 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 Volatile.Write(ref _treeRefreshes, 0);   // counted per folder scanned, for its statistics line
                 Interlocked.Exchange(ref _treeReadMs, 0);
                 Interlocked.Exchange(ref _treeShowMs, 0);
+                Volatile.Write(ref _listRefreshes, 0);
+                Interlocked.Exchange(ref _listReadMs, 0);
+                Interlocked.Exchange(ref _listShowMs, 0);
                 try
                 {
                     summaries.Add(await scanner.ScanAsync(roots[i], SearchInsideArchives, p =>
                     {
                         // Folders appear in the tree as they are found, not only when the scan ends.
-                        if (_treeDuringScan && treeClock.Elapsed >= TreeRefreshEvery && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0)
+                        // ... and so do their files, waiting for thumbnails. Both at the same pace.
+                        if (treeClock.Elapsed >= ScanRefreshEvery)
                         {
                             treeClock.Restart();
-                            RefreshTreeDuringScan();
+                            if (_treeDuringScan && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0) RefreshTreeDuringScan();
+                            if (_listDuringScan && Interlocked.CompareExchange(ref _listRefreshing, 1, 0) == 0) RefreshListDuringScan();
                         }
                         if (throttle.ElapsedMilliseconds < 150) return;
                         throttle.Restart();
@@ -1216,7 +1305,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                 ("problems", summaries.Sum(s => s.Errors)), ("archive_read_kb", ArchiveReadKb), ("version", Stat.Version));
         }
         ScanText = Describe(summaries, cancel.IsCancellationRequested);
-        RefreshAll();
+        RefreshAll(keepTiles: true);   // what is selected in the list stays selected
         _queue.Start();   // thumbnails for anything new
     }
 
@@ -1236,7 +1325,9 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Reads the tree, the list and the counts again (after a scan, or adding or removing a folder).</summary>
-    public void RefreshAll()
+    public void RefreshAll() => RefreshAll(keepTiles: false);
+
+    private void RefreshAll(bool keepTiles)
     {
         LoadTree();
         var stats = _db.GetStats();
@@ -1244,7 +1335,17 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                     (stats.Missing > 0 ? $" · {stats.Missing:N0} missing" : "");
         CopiesText = stats.DuplicateGroups > 0 ? $"{stats.DuplicateGroups:N0} with copies" : "";
         OnPropertyChanged(nameof(Roots));
-        Reload();
+        if (!keepTiles)
+        {
+            Reload();
+        }
+        else if (!_loading)
+        {
+            _listVersion++;
+            ListRefreshing?.Invoke();
+            try { ShowPage(_db.List(BuildQuery(DateTimeOffset.Now)), keepTiles: true); }
+            finally { ListRefreshed?.Invoke(); }
+        }
     }
 
     public string StatsText
