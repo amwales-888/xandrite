@@ -55,7 +55,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private readonly ConcurrentDictionary<ArchiveStream, byte> _streams = new();
     private int _archivesOpen;
     private RunMetrics _metrics = new();
-    private long _pausedSince, _pausedTicks;   // when the current pause began (0: not paused), and pauses so far this run (under _gate)
+    private long _pausedSince, _pausedTicks;
+    private long _runStarted;   // when Start was called for the current run (under _gate)   // when the current pause began (0: not paused), and pauses so far this run (under _gate)
 
     /// <summary>Where a thumbnail run's time goes: thumbs.progress every minute, totals in thumbs.end.</summary>
     private sealed class RunMetrics
@@ -171,6 +172,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             _blocked = null;
             _total = _done = _failed = _skipped = 0;
             _current = null;
+            _runStarted = Stopwatch.GetTimestamp();   // now, not when the run gets going, so a pause in between is inside it
             _run = DevLog.Run("thumbs.run", RunAsync);
         }
     }
@@ -278,7 +280,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private async Task RunAsync()
     {
         var cancellation = _cancel.Token;
-        long started = Stopwatch.GetTimestamp();
+        long started;
+        lock (_gate) started = _runStarted;
         var startedAt = DateTimeOffset.Now;
         long waitingAtStart = 0;
         bool crashed = false;
