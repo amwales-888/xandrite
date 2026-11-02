@@ -432,6 +432,46 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task TreeUpdatesDuringScansCanBeSwitchedOffInDeveloperMode_AndTheStatisticsSaySo()
+    {
+        var f = new Fixture(files: 6);
+        await using var cleanup = f;
+        using var stats = new Xandrite.Library.Logging.FileLog(f.Location.StatisticsFile);
+        LibraryViewModel Start(bool developer)
+        {
+            var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), statistics: stats)
+            {
+                DeveloperMode = developer,
+                TreeRefreshEvery = TimeSpan.Zero,
+            };
+            vm.Initialize();
+            return vm;
+        }
+
+        var dev = Start(developer: true);
+        Assert.True(dev.UpdateTreeDuringScan);   // on unless switched off
+        dev.UpdateTreeDuringScan = false;
+        int duringScan = 0;
+        dev.TreeUpdated += () => { if (dev.IsScanning) duringScan++; };
+        f.Shell.FolderToPick = f.Models;
+        await dev.AddFolderAsync();
+        Assert.Equal(0, duringScan);
+        Assert.Contains(dev.Folders[1].Children, n => n.Name == "sub");   // shown once the scan ended
+
+        stats.Flush();
+        string line = File.ReadAllLines(f.Location.StatisticsFile).Last();
+        Assert.Contains(" tree_updates=off ", line);
+        Assert.Contains(" tree_refreshes=0 ", line);
+
+        Assert.False(Start(developer: true).UpdateTreeDuringScan);   // remembered
+        Assert.True(Start(developer: false).UpdateTreeDuringScan);   // but a normal start always updates the tree
+        var on = Start(developer: false);
+        await on.RescanAsync(null);
+        stats.Flush();
+        Assert.Matches(@" tree_updates=on tree_refreshes=\d+ tree_read_ms=\d+ tree_show_ms=\d+$", File.ReadAllLines(f.Location.StatisticsFile).Last());
+    }
+
+    [Fact]
     public async Task RefreshingTheTreeKeepsItsNodesSoExpandedFoldersStayOpen()
     {
         var f = new Fixture(files: 4);
