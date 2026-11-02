@@ -162,9 +162,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     public bool DeveloperMode { get; init; }
 
     public const string DevArchivesSetting = "dev.log.archives", DevFilesSetting = "dev.log.files",
-        DevThreadsSetting = "dev.log.threads", DevThreadIdsSetting = "dev.log.thread_ids";
+        DevThreadsSetting = "dev.log.threads", DevThreadIdsSetting = "dev.log.thread_ids", DevArchiveIoSetting = "dev.log.archive_io";
 
     public bool LogArchives { get => DevLog.Archives; set => SetDeveloperOption(DevArchivesSetting, value, v => DevLog.Archives = v); }
+    public bool LogArchiveIo { get => DevLog.ArchiveIo; set => SetDeveloperOption(DevArchiveIoSetting, value, v => DevLog.ArchiveIo = v); }
     public bool LogFiles { get => DevLog.Files; set => SetDeveloperOption(DevFilesSetting, value, v => DevLog.Files = v); }
     public bool LogThreads { get => DevLog.Threads; set => SetDeveloperOption(DevThreadsSetting, value, v => DevLog.Threads = v); }
 
@@ -189,11 +190,12 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         DevLog.Log = _log;
         bool On(string key) => DeveloperMode && _db.GetSetting(key) == "1";
         DevLog.Archives = On(DevArchivesSetting);
+        DevLog.ArchiveIo = On(DevArchiveIoSetting);
         DevLog.Files = On(DevFilesSetting);
         DevLog.Threads = On(DevThreadsSetting);
         if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
         if (DeveloperMode)
-            _log.Info("developer.options", ("archives", DevLog.Archives), ("files", DevLog.Files), ("threads", DevLog.Threads),
+            _log.Info("developer.options", ("archives", DevLog.Archives), ("archive_io", DevLog.ArchiveIo), ("files", DevLog.Files), ("threads", DevLog.Threads),
                 ("thread_ids", LogThreadIds));
     }
 

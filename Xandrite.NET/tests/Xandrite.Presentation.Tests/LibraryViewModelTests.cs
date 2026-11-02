@@ -329,7 +329,7 @@ public class LibraryViewModelTests
             Assert.True(again.LogThreadIds);
             Assert.False(again.LogFiles);
             log.Flush();
-            Assert.Contains("developer.options archives=true files=false threads=false thread_ids=true", File.ReadAllText(logFile));
+            Assert.Contains("developer.options archives=true archive_io=false files=false threads=false thread_ids=true", File.ReadAllText(logFile));
         }
         finally
         {

@@ -116,7 +116,7 @@ public sealed class ZipArchiveReader : IArchiveReader
     public async Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath);
+        await using var stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath), archivePath);
         using var opened = DevLog.Archive(archivePath, "zip");
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
         if (zip.Entries.Count > limits.MaxEntries)
@@ -140,7 +140,7 @@ public sealed class ZipArchiveReader : IArchiveReader
                 onProblem(name, "skipped: it is compressed far more than a real model would be");
             else
                 await onEntry(new ArchiveEntry(name, kind.Format!, entry.Length,
-                    entry.LastWriteTime.ToUnixTimeMilliseconds(), entry.Crc32, entry.Open));
+                    entry.LastWriteTime.ToUnixTimeMilliseconds(), entry.Crc32, () => DevLog.ArchiveEntryStream(entry.Open(), archivePath, name)));
         }
         return nested;
     }
@@ -150,7 +150,7 @@ public sealed class ZipArchiveReader : IArchiveReader
         Stream stream;
         try
         {
-            stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath);
+            stream = IoMeter.Wrap(DevLog.ArchiveIoStream(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath), archivePath);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -164,7 +164,7 @@ public sealed class ZipArchiveReader : IArchiveReader
                 ?? throw new ModelGoneException("That file is no longer in the zip.");
             if (entry.Length > maxBytes) throw new InvalidDataException("The file is too large to read from the zip.");
             var bytes = new byte[entry.Length];
-            await using var source = entry.Open();
+            await using var source = DevLog.ArchiveEntryStream(entry.Open(), archivePath, entryName);
             await source.ReadExactlyAsync(bytes, cancellation);
             return bytes;
         }

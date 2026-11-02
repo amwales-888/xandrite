@@ -433,6 +433,7 @@
                         <Separator Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}" />
                         <MenuItem Header="Developer" Visibility="{Binding DeveloperMode, Converter={StaticResource Visible}}">
                             <MenuItem Header="Log archives opened and closed" IsCheckable="True" IsChecked="{Binding LogArchives}" />
+                            <MenuItem Header="Log archive reads, seeks and writes (very detailed)" IsCheckable="True" IsChecked="{Binding LogArchiveIo}" />
                             <MenuItem Header="Log files opened and closed" IsCheckable="True" IsChecked="{Binding LogFiles}" />
                             <MenuItem Header="Log threads started and ended" IsCheckable="True" IsChecked="{Binding LogThreads}" />
                             <MenuItem Header="Thread id on every log line" IsCheckable="True" IsChecked="{Binding LogThreadIds}" />

@@ -17,13 +17,14 @@ public class DevLogTests
 
     private sealed class Session : IDisposable
     {
-        public Session(TempLibrary lib, bool archives = false, bool files = false, bool threads = false)
+        public Session(TempLibrary lib, bool archives = false, bool files = false, bool threads = false, bool archiveIo = false)
         {
             Log = new FileLog(Path.Combine(lib.Dir, "logs", "dev.log"));
             DevLog.Log = Log;
             DevLog.Archives = archives;
             DevLog.Files = files;
             DevLog.Threads = threads;
+            DevLog.ArchiveIo = archiveIo;
         }
 
         public FileLog Log { get; }
@@ -39,7 +40,7 @@ public class DevLogTests
 
         public void Dispose()
         {
-            DevLog.Archives = DevLog.Files = DevLog.Threads = false;
+            DevLog.Archives = DevLog.Files = DevLog.Threads = DevLog.ArchiveIo = false;
             DevLog.Log = NullLog.Instance;
             Log.Dispose();
         }
@@ -145,5 +146,40 @@ public class DevLogTests
         Assert.EndsWith(" tid=7", lines[1]);
         Assert.Single(Regex.Matches(lines[1], "tid="));
         Assert.Matches($@" three tid=(?!{Environment.CurrentManagedThreadId}$)\d+$", lines[2]);
+    }
+
+    [Fact]
+    public async Task ArchiveReadsSeeksAndItemsAreLogged()
+    {
+        using var lib = new TempLibrary();
+        lib.WriteZip("kit.zip", new Dictionary<string, string> { ["a.stl"] = Stl, ["b.stl"] = Stl.Replace("solid t", "solid b") });
+        bool sevenZip = SevenZipArchiveReader.IsAvailable;
+        if (sevenZip)
+        {
+            foreach (var name in new[] { "solid.7z", "split.7z.001", "split.7z.002", "split.7z.003", "split.7z.004" })
+                File.Copy(Fixture(name), lib.At(name));
+        }
+        using var s = new Session(lib, archiveIo: true);
+        await lib.Scan();
+
+        string text = s.Text;
+        // The zip: reads and seeks on its file, and each entry taken out.
+        Assert.Matches(@" archive\.read path=[^\n]*kit\.zip""? at=\d+ asked=\d+ got=\d+ us=\d+ tid=\d+", text);
+        Assert.Matches(@" archive\.seek path=[^\n]*kit\.zip""? from=\d+ to=\d+ origin=\w+ offset=-?\d+", text);
+        Assert.Matches($@" archive\.entry path=[^\n]*kit\.zip""? entry=a\.stl bytes={Stl.Length} reads=\d+ ms=\d+", text);
+        if (!sevenZip) return;
+        // 7-Zip: each item it goes through, the pieces it hands over, and how each ended.
+        Assert.Matches(@" archive\.item path=[^\n]*solid\.7z""? index=\d+ entry=models/leg\.stl wanted=true", text);
+        Assert.Matches(@" archive\.item path=[^\n]*solid\.7z""? index=\d+ entry=[^\n]* wanted=false", text);   // a readme, decompressed but not wanted
+        Assert.Matches(@" archive\.write path=[^\n]*solid\.7z""? index=\d+ bytes=\d+ total=\d+", text);
+        Assert.Matches(@" archive\.item\.end path=[^\n]*solid\.7z""? index=\d+ entry=models/leg\.stl result=0 bytes=10 ms=\d+", text);
+        // A split set: the reads land on each part file.
+        Assert.Matches(@" archive\.read path=[^\n]*split\.7z\.002""? at=\d+", text);
+        Assert.Matches(@" archive\.seek path=[^\n]*split\.7z\.00\d""? ", text);
+
+        DevLog.ArchiveIo = false;
+        int before = Regex.Matches(s.Text, "archive\\.read").Count;
+        await new LibraryScanner(lib.Db).ScanAsync(lib.Root);   // nothing changed, and nothing more logged
+        Assert.Equal(before, Regex.Matches(s.Text, "archive\\.read").Count);
     }
 }
