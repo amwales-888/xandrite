@@ -14,7 +14,7 @@ namespace Xandrite.Library.Scanning;
 public static class ArchiveFiles
 {
     public const int DefaultReadBufferBytes = 1 << 20;   // 1 MB: few, large reads suit a network share
-    private const int Smallest = 4 << 10, Largest = 16 << 20;
+    private const int Smallest = 4 << 10, Largest = 64 << 20;
 
     private static int _readBufferBytes = DefaultReadBufferBytes;
 

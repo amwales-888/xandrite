@@ -322,6 +322,7 @@ The **Preferences** menu, under the gear at the top right of the library window:
 | **Thumbnail speed** | Full speed, Balanced or In the background (section 5). |
 | **Open data folder** | Opens the folder where Xandrite keeps its library (section 12). |
 | **Show log file** | Opens Xandrite's log in your text editor (section 13). |
+| **Show statistics** | Opens the statistics file: one line for each scan and each thumbnail run, with when it started and ended, how long it took and what it found or drew (section 13). |
 | **Check for updates automatically** | On by default (section 11). |
 | **Check for updates now** | Checks straight away. |
 | **About Xandrite…** | Shows the version and update status. |
@@ -350,6 +351,7 @@ Only the parts that changed are downloaded, so updates are usually small. To sto
 | The library: folders, models, ratings, views | `%APPDATA%\Xandrite.NET\library.sqlite` |
 | Thumbnails | `%APPDATA%\Xandrite.NET\thumbnails` |
 | The log file | `%APPDATA%\Xandrite.NET\logs\xandrite.log` |
+| The statistics file | `%APPDATA%\Xandrite.NET\logs\statistics.log` |
 | The app itself | `%LOCALAPPDATA%\Xandrite.NET` |
 
 **Preferences (the gear) → Open data folder** takes you to the first. Thumbnails can always be redrawn, but **ratings and
@@ -375,6 +377,10 @@ woke from sleep or the driver was updated. Click **Resume**.
 **The log file.** Xandrite writes what it does to a log: every scan, every thumbnail, every problem, with times and
 reasons. **Preferences (the gear) → Show log file** opens it. If you report a problem, the log is the most useful thing to
 include. It's kept to a sensible size automatically.
+
+**How long did that scan take?** **Preferences (the gear) → Show statistics** opens a short file with one line per scan
+and per thumbnail run: when each started and ended, how long it took (`took=`), and how many files it found, read and
+added, or how many thumbnails it drew. It keeps years of history, so you can compare this week's scan with last month's.
 
 ---
 

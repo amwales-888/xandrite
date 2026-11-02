@@ -21,6 +21,9 @@ public sealed record LibraryLocation(string DataFolder)
     /// <summary>The log: logs\xandrite.log, with up to five older files beside it (xandrite.log.1 …).</summary>
     public string LogFile => Path.Combine(DataFolder, "logs", "xandrite.log");
 
+    /// <summary>The statistics file: logs\statistics.log, one line for each scan and each thumbnail run.</summary>
+    public string StatisticsFile => Path.Combine(DataFolder, "logs", "statistics.log");
+
     public static LibraryLocation Default() =>
         new(Environment.GetEnvironmentVariable("XANDRITE_NET_DATA") is { Length: > 0 } custom
             ? custom

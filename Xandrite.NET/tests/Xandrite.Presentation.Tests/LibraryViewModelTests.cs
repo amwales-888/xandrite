@@ -339,6 +339,47 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task ScansAndRescansAreRecordedInTheStatisticsFile_WithTheReadSize()
+    {
+        var f = new Fixture(files: 2);
+        await using var cleanup = f;
+        string other = Path.Combine(f.Dir, "more");
+        Directory.CreateDirectory(other);
+        File.WriteAllText(Path.Combine(other, "x.stl"), Stl.Replace("solid t", "solid x"));
+        using var stats = new Xandrite.Library.Logging.FileLog(f.Location.StatisticsFile);
+        var vm = new LibraryViewModel(f.Db, f.Location, f.Queue, f.Shell, new ImmediateDispatcher(), statistics: stats);
+        vm.Initialize();
+        vm.ShowStatistics();
+        Assert.Null(f.Shell.OpenedFile);   // nothing recorded yet: a message instead
+        Assert.Contains(f.Shell.Messages, m => m.StartsWith("Nothing has been recorded yet", StringComparison.Ordinal));
+        try
+        {
+            vm.ArchiveRead32768 = true;
+            Assert.Equal(32768, vm.ArchiveReadKb);
+            f.Shell.FolderToPick = f.Models;
+            await vm.AddFolderAsync();
+            f.Shell.FolderToPick = other;
+            await vm.AddFolderAsync();
+            await vm.RescanAsync(null);
+        }
+        finally
+        {
+            Xandrite.Library.Scanning.ArchiveFiles.ReadBufferBytes = Xandrite.Library.Scanning.ArchiveFiles.DefaultReadBufferBytes;
+        }
+
+        vm.ShowStatistics();
+        Assert.Equal(f.Location.StatisticsFile, f.Shell.OpenedFile);
+        var lines = File.ReadAllLines(f.Location.StatisticsFile);
+        Assert.Equal(4, lines.Count(l => l.Contains(" scan root=")));   // two when added, two in the rescan
+        string rescan = Assert.Single(lines, l => l.Contains(" rescan "));
+        Assert.Contains(" folders=2 ", rescan);
+        Assert.Contains(" files=3 ", rescan);
+        Assert.Contains(" archive_read_kb=32768 ", rescan);
+        Assert.Matches(@" took=[\d.]+s ", rescan);
+        foreach (var scan in lines.Where(l => l.Contains(" scan root="))) Assert.Contains(" archive_read_kb=32768 ", scan);
+    }
+
+    [Fact]
     public async Task TheArchiveReadSizeIsSavedAndUsedEvenWithoutDeveloperMode()
     {
         var f = new Fixture();

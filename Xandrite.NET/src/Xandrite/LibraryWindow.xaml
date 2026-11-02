@@ -425,6 +425,7 @@
                         <Separator />
                         <MenuItem Header="Open data folder" Command="{Binding OpenDataFolderCommand}" />
                         <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />
+                        <MenuItem Header="Show statistics" Command="{Binding ShowStatisticsCommand}" />
                         <Separator />
                         <MenuItem Header="Check for updates automatically" IsCheckable="True" IsChecked="{Binding Updates.CheckAutomatically}" />
                         <MenuItem Header="Check for updates now" Command="{Binding Updates.CheckNowCommand}" />
@@ -443,6 +444,9 @@
                                 <MenuItem Header="256 KB" IsCheckable="True" IsChecked="{Binding ArchiveRead256}" />
                                 <MenuItem Header="1 MB (default)" IsCheckable="True" IsChecked="{Binding ArchiveRead1024}" />
                                 <MenuItem Header="4 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead4096}" />
+                                <MenuItem Header="12 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead12288}" />
+                                <MenuItem Header="16 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead16384}" />
+                                <MenuItem Header="32 MB" IsCheckable="True" IsChecked="{Binding ArchiveRead32768}" />
                             </MenuItem>
                             <Separator />
                             <MenuItem Header="Show log file" Command="{Binding ShowLogCommand}" />

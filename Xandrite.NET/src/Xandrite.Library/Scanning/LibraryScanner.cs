@@ -53,6 +53,9 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
     /// <summary>Where scans are recorded: start and end, every file hashed, every archive read, every problem.</summary>
     public ILog Log { get; init; } = NullLog.Instance;
 
+    /// <summary>The statistics file: one line per scan with how long it took and what it found (see <see cref="Stat"/>).</summary>
+    public ILog Statistics { get; init; } = NullLog.Instance;
+
     public Task<ScanSummary> ScanAsync(string root, bool includeArchives = true, Action<ScanProgress>? onProgress = null, CancellationToken cancellation = default) =>
         DevLog.Run("scan", () => ScanCoreAsync(root, includeArchives, onProgress, cancellation));
 
@@ -91,6 +94,27 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
             ("parallel", Math.Round(m.Busy.Ms / Math.Max(1.0, wallMs), 2)), ("stalls", Interlocked.Read(ref m.Stalls)));
     }
 
+    /// <summary>The scan's line in the statistics file.</summary>
+    private void WriteStatistics(string root, DateTimeOffset startedAt, long ms, bool includeArchives, bool cancelled, Counts counts,
+        long added, long moved, int missing, long duplicates, ScanMetrics m, long previousScan)
+    {
+        long readBytes = m.LooseRead.Bytes + m.ArchiveRead.Bytes, readMs = m.LooseRead.Ms + m.ArchiveRead.Ms;
+        Statistics.InfoOrWarn(cancelled || counts.Errors > 0, "scan",
+            ("root", root), ("result", cancelled ? "cancelled" : "finished"),
+            ("started", Stat.Time(startedAt)), ("ended", Stat.Time(DateTimeOffset.Now)), ("took", Stat.Took(ms)), ("duration_s", Stat.Seconds(ms)),
+            ("files", counts.Found), ("unchanged", counts.Reused), ("read", counts.Hashed), ("new", added), ("moved", moved), ("missing", missing),
+            ("duplicate_groups", duplicates), ("archives", counts.Archives), ("nested_archives", counts.Nested), ("problems", counts.Errors),
+            ("files_per_s", Stat.Rate(counts.Found, ms)),
+            ("read_mb", Stat.Mb(readBytes)), ("read_mb_s", readMs > 0 ? Math.Round(readBytes / 1048576.0 / (readMs / 1000.0), 1) : null),
+            ("archive_reads", m.ArchiveRead.Calls),
+            ("average_read_kb", m.ArchiveRead.Calls > 0 ? Math.Round(m.ArchiveRead.Bytes / 1024.0 / m.ArchiveRead.Calls, 1) : null),
+            ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024), ("search_archives", includeArchives), ("workers", Concurrency),
+            ("folder_on", Stat.WhereIs(root)),
+            ("previous_scan", previousScan > 0 ? Stat.Time(DateTimeOffset.FromUnixTimeMilliseconds(previousScan)) : "never"),
+            ("since_previous", previousScan > 0 ? Stat.Took(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - previousScan) : null),
+            ("version", Stat.Version), ("cores", Environment.ProcessorCount));
+    }
+
     /// <summary>The database, with the time of every call (including waiting for the lock) added to a meter.</summary>
     private sealed class TimedDatabase(LibraryDatabase db, Meter meter)
     {
@@ -122,6 +146,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         if (!Directory.Exists(root)) throw new DirectoryNotFoundException("Not a folder: " + root);
 
         var clock = Stopwatch.StartNew();
+        var startedAt = DateTimeOffset.Now;
         var metrics = new ScanMetrics
         {
             Walk = new FolderWalker.Meters
@@ -138,6 +163,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         // The scan's id is its start time, as in the JS app, but always later than any earlier scan, so two scans in the
         // same millisecond cannot be confused (which would spoil the "new" and "missing" counts).
         long scanId = Math.Max(db.Now(), db.Locked(c => c.Scalar("SELECT COALESCE(MAX(last_seen_scan), 0) FROM locations")) + 1);
+        long previousScan = db.Locked(c => c.Scalar("SELECT COALESCE((SELECT last_scanned_at FROM roots WHERE path = ?), 0)", root));
         var counts = new Counts();
         Log.Info("scan.start", ("root", root), ("archives", includeArchives), ("concurrency", Concurrency),
             ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
@@ -443,6 +469,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
                     ("hashed", counts.Hashed), ("unchanged", counts.Reused), ("new", added), ("moved", moved), ("missing", missing),
                     ("duplicate_groups", duplicates), ("archives", counts.Archives), ("nested_archives", counts.Nested), ("errors", counts.Errors));
                 LogMetrics(root, clock.ElapsedMilliseconds, metrics);
+                WriteStatistics(root, startedAt, clock.ElapsedMilliseconds, includeArchives, cancelled, counts, added, moved, missing, duplicates, metrics, previousScan);
                 return new ScanSummary
                 {
                     Root = root,
