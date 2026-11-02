@@ -115,7 +115,17 @@ public sealed class FolderNodeViewModel : ObservableObject
     /// <summary>Null for "All files".</summary>
     public string? Path { get; }
 
-    public int Count { get; }
+    public int Count
+    {
+        get;
+        internal set
+        {
+            if (field == value) return;
+            field = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Label));
+        }
+    }
 
     public bool IsRoot { get; }
 
