@@ -55,7 +55,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private readonly ConcurrentDictionary<ArchiveStream, byte> _streams = new();
     private int _archivesOpen;
     private RunMetrics _metrics = new();
-    private long _pausedSince, _pausedTicks;   // when the current pause began (0: not paused), and pauses so far this run (under _gate)
+    private long _pausedSince, _pausedTicks;
+    private long _runStarted;   // when Start was called for the current run (under _gate)   // when the current pause began (0: not paused), and pauses so far this run (under _gate)
 
     /// <summary>Where a thumbnail run's time goes: thumbs.progress every minute, totals in thumbs.end.</summary>
     private sealed class RunMetrics
@@ -171,6 +172,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             _blocked = null;
             _total = _done = _failed = _skipped = 0;
             _current = null;
+            _runStarted = Stopwatch.GetTimestamp();   // now, not when the run gets going, so a pause in between is inside it
             _run = DevLog.Run("thumbs.run", RunAsync);
         }
     }
@@ -206,16 +208,71 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     }
 
     /// <summary>Leaves a model alone for the rest of this run (the viewer has just saved its image).</summary>
-    public void Skip(string sha256) => _skip[sha256] = 0;
+    public void Skip(string sha256)
+    {
+        _skip[sha256] = 0;
+        RecountLater();   // its image was saved outside the queue
+    }
 
     /// <summary>Lets a skipped model be drawn again (it was regenerated or reverted).</summary>
     public void Unskip(string sha256) => _skip.TryRemove(sha256, out _);
 
+    /// <summary>
+    /// How things stand. Cheap: the library's counts are kept here, adjusted as each thumbnail is made or fails, and
+    /// counted again from the library only now and then on a worker thread. Counting takes about 0.1 s on a library of
+    /// 60,000 files and holds the library's lock meanwhile; counting for every thumbnail, as this used to, kept the
+    /// lock busy all the time, and the window, which asks five times a second, waited for it.
+    /// </summary>
     public ThumbnailQueueStatus GetStatus()
     {
-        var counts = _db.GetThumbnailCounts(Look.RenderVersion);
+        ThumbnailCounts? counts;
+        lock (_gate) counts = _counts;
+        counts ??= Recount();   // only the first time
         lock (_gate)
             return new ThumbnailQueueStatus(_active, _paused, _blocked, _total, _done, _failed, _skipped, _current, counts);
+    }
+
+    private ThumbnailCounts? _counts;   // under _gate
+    private int _recounting;
+
+    /// <summary>Counts from the library. Call on a worker thread (not the UI thread).</summary>
+    private ThumbnailCounts Recount()
+    {
+        var counts = _db.GetThumbnailCounts(Look.RenderVersion);
+        lock (_gate) _counts = counts;
+        return counts;
+    }
+
+    /// <summary>
+    /// Counts again from the library soon, on a worker thread, then reports progress. For changes made outside the
+    /// queue (a thumbnail saved from the viewer, failed ones put back to try again).
+    /// </summary>
+    public void RecountLater()
+    {
+        if (Interlocked.Exchange(ref _recounting, 1) == 1) return;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Recount();
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                Log.Warn("thumbs.count_failed", ("message", e.Message));
+            }
+            finally
+            {
+                Volatile.Write(ref _recounting, 0);
+            }
+            Emit();
+        });
+    }
+
+    /// <summary>A model that was waiting is now drawn or failed. Call under _gate.</summary>
+    private void Counted(bool ok)
+    {
+        if (_counts is not { } c) return;
+        _counts = new ThumbnailCounts(c.Ok + (ok ? 1 : 0), c.Failed + (ok ? 0 : 1), Math.Max(0, c.Pending - 1));
     }
 
     private void Emit() => Progress?.Invoke(GetStatus());
@@ -223,7 +280,8 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     private async Task RunAsync()
     {
         var cancellation = _cancel.Token;
-        long started = Stopwatch.GetTimestamp();
+        long started;
+        lock (_gate) started = _runStarted;
         var startedAt = DateTimeOffset.Now;
         long waitingAtStart = 0;
         bool crashed = false;
@@ -233,7 +291,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         {
             Directory.CreateDirectory(_location.ThumbnailFolder);
             ForgetMissingImages();
-            waitingAtStart = _db.GetThumbnailCounts(Look.RenderVersion).Pending;
+            waitingAtStart = Recount().Pending;
             Log.Info("thumbs.start", ("pending", waitingAtStart), ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()),
                 ("archive_read_kb", ArchiveFiles.ReadBufferBytes / 1024));
             _metrics = new RunMetrics
@@ -259,6 +317,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                     continue;
                 }
                 lock (_gate) _total += jobs.Count;
+                if (_total > jobs.Count) Recount();   // more work arrived during the run (a scan): count again
                 Emit();
 
                 var work = new ConcurrentQueue<WorkItem>(Plan(jobs));
@@ -297,7 +356,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
             long? waitingAtEnd = null;
             try
             {
-                waitingAtEnd = _db.GetThumbnailCounts(Look.RenderVersion).Pending;
+                waitingAtEnd = Recount().Pending;
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -374,6 +433,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
                     ("workers", Limits.Workers), ("speed", Speed.ToString().ToLowerInvariant()),
                     ("read_ms", m.Io.Read.Ms), ("load_ms", m.Load.Ms), ("render_ms", m.Render.Ms), ("encode_ms", m.Encode.Ms), ("write_ms", m.Write.Ms));
                 (lastDone, lastRead) = (done, read);
+                RecountLater();   // corrects the running counts for anything changed outside the queue
             }
         }
         catch (OperationCanceledException) { }
@@ -739,7 +799,11 @@ public sealed class ThumbnailQueue : IAsyncDisposable
         Log.Info("thumb.ok", ("path", job.Path), ("sha256", job.Sha256), ("ms", Ms()), ("read_ms", readMs), ("size", job.Size), ("triangles", result.Triangles),
             ("load_ms", (long)result.LoadTime.TotalMilliseconds), ("render_ms", (long)result.RenderTime.TotalMilliseconds),
             ("encode_ms", (long)result.EncodeTime.TotalMilliseconds));
-        lock (_gate) _done++;
+        lock (_gate)
+        {
+            _done++;
+            Counted(ok: true);
+        }
         JobDone?.Invoke(new ThumbnailJobDone(job.Sha256, ThumbnailState.Ok, null));
         Emit();
     }
@@ -755,7 +819,11 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     {
         Log.Warn("thumb.fail", ("path", job.Path), ("sha256", job.Sha256), ("ms", ms), ("message", message));
         _db.RecordThumbnail(job.Sha256, ThumbnailState.Failed, Look.RenderVersion, error: message);
-        lock (_gate) _failed++;
+        lock (_gate)
+        {
+            _failed++;
+            Counted(ok: false);
+        }
         JobDone?.Invoke(new ThumbnailJobDone(job.Sha256, ThumbnailState.Failed, message));
         Emit();
     }
