@@ -182,6 +182,22 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         set => SetDeveloperOption(DevThreadIdsSetting, value, v => { if (_log is FileLog file) file.ThreadIds = v; });
     }
 
+    public const string DevTreeDuringScanSetting = "dev.scan.tree_updates";
+    private bool _treeDuringScan = true;
+    private int _treeRefreshes;
+    private long _treeReadMs, _treeShowMs;
+
+    /// <summary>
+    /// Developer → Update folder tree during scans: on unless switched off, and only off when started with --developer,
+    /// so a normal start always updates it. Each scan's statistics line records it, with how many refreshes ran and
+    /// how long they took.
+    /// </summary>
+    public bool UpdateTreeDuringScan
+    {
+        get => _treeDuringScan;
+        set => SetDeveloperOption(DevTreeDuringScanSetting, value, v => _treeDuringScan = v);
+    }
+
     private void SetDeveloperOption(string key, bool value, Action<bool> apply, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         apply(value);
@@ -232,9 +248,10 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         DevLog.Files = On(DevFilesSetting);
         DevLog.Threads = On(DevThreadsSetting);
         if (_log is FileLog file) file.ThreadIds = On(DevThreadIdsSetting);
+        _treeDuringScan = _db.GetSetting(DevTreeDuringScanSetting, "1") == "1";
         if (DeveloperMode)
             _log.Info("developer.options", ("archives", DevLog.Archives), ("archive_io", DevLog.ArchiveIo), ("files", DevLog.Files), ("threads", DevLog.Threads),
-                ("thread_ids", LogThreadIds));
+                ("thread_ids", LogThreadIds), ("tree_during_scan", _treeDuringScan));
     }
 
     /// <summary>New versions of the app (set by the app; the status bar and the Preferences menu show it).</summary>
@@ -625,12 +642,17 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         {
             try
             {
+                long started = Stopwatch.GetTimestamp();
                 var tree = _db.GetFolderTree();
                 int files = tree.Sum(r => r.Count);
+                Interlocked.Add(ref _treeReadMs, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                Interlocked.Increment(ref _treeRefreshes);
                 _ui.Post(() =>
                 {
                     if (_treeVersion != version) return;
+                    long shown = Stopwatch.GetTimestamp();
                     if (ApplyTree(tree, files)) Reload();
+                    Interlocked.Add(ref _treeShowMs, (long)Stopwatch.GetElapsedTime(shown).TotalMilliseconds);
                 });
             }
             catch (Exception e)
@@ -1126,7 +1148,16 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         if (IsScanning || roots.Count == 0) return;
         IsScanning = true;
         var cancel = _scanCancel = new CancellationTokenSource();
-        var scanner = new LibraryScanner(_db, _source) { Log = _log, Statistics = _statistics };
+        var scanner = new LibraryScanner(_db, _source)
+        {
+            Log = _log,
+            Statistics = _statistics,
+            MoreStatistics = () =>
+            [
+                ("tree_updates", _treeDuringScan ? "on" : "off"), ("tree_refreshes", Volatile.Read(ref _treeRefreshes)),
+                ("tree_read_ms", Interlocked.Read(ref _treeReadMs)), ("tree_show_ms", Interlocked.Read(ref _treeShowMs)),
+            ],
+        };
         var scanClock = Stopwatch.StartNew();
         var scanStarted = DateTimeOffset.Now;
         if (roots.Count > 1) _log.Info("rescan.start", ("folders", roots.Count));
@@ -1139,12 +1170,15 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
             {
                 string prefix = roots.Count > 1 ? $"Scanning {i + 1} of {roots.Count}: " : "Scanning: ";
                 ScanText = prefix + roots[i];
+                Volatile.Write(ref _treeRefreshes, 0);   // counted per folder scanned, for its statistics line
+                Interlocked.Exchange(ref _treeReadMs, 0);
+                Interlocked.Exchange(ref _treeShowMs, 0);
                 try
                 {
                     summaries.Add(await scanner.ScanAsync(roots[i], SearchInsideArchives, p =>
                     {
                         // Folders appear in the tree as they are found, not only when the scan ends.
-                        if (treeClock.Elapsed >= TreeRefreshEvery && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0)
+                        if (_treeDuringScan && treeClock.Elapsed >= TreeRefreshEvery && Interlocked.CompareExchange(ref _treeRefreshing, 1, 0) == 0)
                         {
                             treeClock.Restart();
                             RefreshTreeDuringScan();

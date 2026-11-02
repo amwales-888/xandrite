@@ -120,7 +120,7 @@ is started with `--developer`:
 dotnet run --project src/Xandrite -- --developer           (from a build)
 ```
 
-**Preferences (the gear) → Developer** then has five switches, all off at first. They are remembered, but only put
+**Preferences (the gear) → Developer** then has five logging switches, all off at first. They are remembered, but only put
 in force when the app is started with `--developer` again, so they never run unnoticed. Everything goes to the normal
 log file; `developer.options` at start-up records which are on.
 
@@ -140,6 +140,19 @@ Work runs on the .NET thread pool, and asynchronous work can move to another poo
 
 These logs grow quickly (one line or two per file and per thumbnail); the log keeps about 60 MB, so turn them off
 again when you are done.
+
+### Update folder tree during scans
+
+On by default: while a scan runs, the folder tree is read and brought up to date every 2 seconds, so folders appear
+as they are found. **Preferences (the gear) → Developer → Update folder tree during scans** turns it off, to see what
+it costs; the tree is then only brought up to date when the scan finishes. The switch is remembered, but like the
+logging switches it only takes effect when the app is started with `--developer`; a normal start always updates
+the tree.
+
+Each `scan` line in the statistics file records `tree_updates=on|off`, `tree_refreshes` (how many times the tree
+was read during that folder's scan), `tree_read_ms` (time reading it from the library, on a worker thread, holding
+up the scan's own library work meanwhile) and `tree_show_ms` (time updating the tree on screen). To compare, scan the
+same new folder with the switch on and off and look at `took`, `files_per_s` and `tree_read_ms`.
 
 ### Archive read size
 

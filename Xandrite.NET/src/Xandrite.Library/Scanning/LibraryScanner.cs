@@ -56,6 +56,9 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
     /// <summary>The statistics file: one line per scan with how long it took and what it found (see <see cref="Stat"/>).</summary>
     public ILog Statistics { get; init; } = NullLog.Instance;
 
+    /// <summary>More fields for the scan's statistics line, asked for when the scan ends (settings the scanner does not know about).</summary>
+    public Func<IEnumerable<(string Key, object? Value)>>? MoreStatistics { get; init; }
+
     public Task<ScanSummary> ScanAsync(string root, bool includeArchives = true, Action<ScanProgress>? onProgress = null, CancellationToken cancellation = default) =>
         DevLog.Run("scan", () => ScanCoreAsync(root, includeArchives, onProgress, cancellation));
 
@@ -99,7 +102,8 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         long added, long moved, int missing, long duplicates, ScanMetrics m, long previousScan)
     {
         long readBytes = m.LooseRead.Bytes + m.ArchiveRead.Bytes, readMs = m.LooseRead.Ms + m.ArchiveRead.Ms;
-        Statistics.InfoOrWarn(cancelled || counts.Errors > 0, "scan",
+        (string Key, object? Value)[] fields =
+        [
             ("root", root), ("result", cancelled ? "cancelled" : "finished"),
             ("started", Stat.Time(startedAt)), ("ended", Stat.Time(DateTimeOffset.Now)), ("took", Stat.Took(ms)), ("duration_s", Stat.Seconds(ms)),
             ("files", counts.Found), ("unchanged", counts.Reused), ("read", counts.Hashed), ("new", added), ("moved", moved), ("missing", missing),
@@ -112,7 +116,10 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
             ("folder_on", Stat.WhereIs(root)),
             ("previous_scan", previousScan > 0 ? Stat.Time(DateTimeOffset.FromUnixTimeMilliseconds(previousScan)) : "never"),
             ("since_previous", previousScan > 0 ? Stat.Took(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - previousScan) : null),
-            ("version", Stat.Version), ("cores", Environment.ProcessorCount));
+            ("version", Stat.Version), ("cores", Environment.ProcessorCount),
+            .. MoreStatistics?.Invoke() ?? [],
+        ];
+        Statistics.InfoOrWarn(cancelled || counts.Errors > 0, "scan", fields);
     }
 
     /// <summary>The database, with the time of every call (including waiting for the lock) added to a meter.</summary>
