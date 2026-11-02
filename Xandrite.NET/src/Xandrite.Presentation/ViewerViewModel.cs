@@ -232,7 +232,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         byte[] bytes;
         try
         {
-            bytes = await File.ReadAllBytesAsync(path);
+            bytes = await DevLog.ReadAllBytesAsync(path, "viewer");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -250,7 +250,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         string sha;
         try
         {
-            (mesh, sha) = await Task.Run(() => (ModelLoader.Load(document.Bytes, document.Format), Convert.ToHexStringLower(SHA256.HashData(document.Bytes))));
+            (mesh, sha) = await DevLog.Run("viewer.load", () => (ModelLoader.Load(document.Bytes, document.Format), Convert.ToHexStringLower(SHA256.HashData(document.Bytes))));
         }
         catch (ModelFormatException e)
         {
@@ -376,7 +376,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         var mesh = _mesh;
         var request = new RenderRequest(_frame.Transform, Camera.Setup(Aspect), _viewportWidth, _viewportHeight);
         var buffer = _buffer;
-        Task.Run(() => DrawFrame(mesh, request, buffer)).ContinueWith(task => _ui.Post(() =>
+        DevLog.Run("viewer.frame", () => DrawFrame(mesh, request, buffer)).ContinueWith(task => _ui.Post(() =>
         {
             _rendering = false;
             if (task.IsCompletedSuccessfully)
@@ -448,7 +448,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         var mesh = _mesh ?? throw new InvalidOperationException("No model is open.");
         var view = Camera.ThumbnailView(Aspect, _zUp);
         var info = _info;
-        return Task.Run(() =>
+        return DevLog.Run("viewer.thumbnail", () =>
         {
             lock (_renderLock)
             {
@@ -477,7 +477,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         {
             var (png, view) = await DrawThumbnailAsync(Look.ThumbnailSize);
             // Off the UI thread, so a Revert waiting for the same lock on the UI thread cannot hold this up.
-            await Task.Run(async () =>
+            await DevLog.Run("viewer.save_view", async () =>
             {
                 using (await ThumbnailFiles.LockAsync(sha))   // the queue may be drawing this model too
                 {
@@ -527,7 +527,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         try
         {
             var (png, _) = await DrawThumbnailAsync(_exportSize);
-            await File.WriteAllBytesAsync(path, png);
+            await DevLog.WriteAllBytesAsync(path, png, "export");
             StatusText = "Exported " + path;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or RendererException)

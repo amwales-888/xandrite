@@ -94,10 +94,10 @@ public sealed class IoMeter
     public static Stream Wrap(Stream stream, string path) => Current is { } meter ? new MeteredStream(stream, meter, path) : stream;
 
     /// <summary>Opens a file for reading, measured if anything is measuring here.</summary>
-    public static FileStream OpenFile(string path, int bufferSize, FileOptions options = FileOptions.None)
+    public static FileStream OpenFile(string path, int bufferSize, FileOptions options = FileOptions.None, string purpose = "read")
     {
         long started = Stopwatch.GetTimestamp();
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize, options);
+        var stream = DevLog.OpenRead(path, bufferSize, options, purpose);
         Current?.Open.Add(Stopwatch.GetTimestamp() - started);
         return stream;
     }

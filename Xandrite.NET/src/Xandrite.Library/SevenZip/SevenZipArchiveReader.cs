@@ -42,6 +42,9 @@ public sealed class SevenZipArchiveReader : IArchiveReader
         private readonly InStream _stream;
         private readonly OpenCallback _callback;
 
+        private IDisposable _logged = NullDisposable;
+        private static readonly IDisposable NullDisposable = new MemoryStream(0);
+
         private OpenArchive(nint archive, InStream stream, OpenCallback callback)
         {
             _archive = archive;
@@ -54,6 +57,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             if (!SevenZipNative.IsAvailable) throw new NotSupportedException(LoadError);
 
             Stream stream;
+            int partCount = 1;
             string name = Path.GetFileName(path);
             if (FolderWalker.GetSplitRole(name) is { Style: FolderWalker.SplitStyle.Numbered })
             {
@@ -64,11 +68,12 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 IoMeter.Current?.List.Add(Stopwatch.GetTimestamp() - listed, calls: 1);
                 var (parts, problem) = FolderWalker.ArchiveParts(name, names);
                 if (problem is not null) throw new InvalidDataException(problem);
+                partCount = parts.Count;
                 stream = IoMeter.Wrap(new SplitStream(parts.Select(p => Path.Combine(folder, p)).ToList()), path);
             }
             else
             {
-                stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 16), path);
+                stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 16, purpose: "archive"), path);
             }
 
             byte format;
@@ -107,7 +112,8 @@ public sealed class SevenZipArchiveReader : IArchiveReader
                 if (failure is IOException io) throw io;
                 throw new InvalidDataException("not a valid archive, or damaged");
             }
-            return new OpenArchive(archive, input, callback);
+            // RAR volumes (name.part2.rar...) are opened by 7-Zip through the callback, which logs each one.
+            return new OpenArchive(archive, input, callback) { _logged = DevLog.Archive(path, format == Format7z ? "7z" : "rar", partCount + callback.VolumeCount) };
         }
 
         private static byte DetectFormat(Stream stream)
@@ -229,6 +235,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
             }
             _stream.Dispose();
             _callback.Dispose();
+            _logged.Dispose();
         }
     }
 
@@ -247,7 +254,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
     /* ---------- IArchiveReader ---------- */
 
     public Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation) =>
-        Task.Run(() =>
+        DevLog.Run("7z.scan", () =>
         {
             cancellation.ThrowIfCancellationRequested();
             using var archive = OpenArchive.Open(archivePath);
@@ -297,7 +304,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
         }, cancellation);
 
     public Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation) =>
-        Task.Run(() => BackgroundWork.Run(() =>
+        DevLog.Run("7z.read", () => BackgroundWork.Run(() =>
         {
             if (!File.Exists(archivePath)) throw new ModelGoneException("The archive is no longer there.");
             using var archive = OpenArchive.Open(archivePath);
@@ -321,7 +328,7 @@ public sealed class SevenZipArchiveReader : IArchiveReader
     /// to the last entry wanted, instead of once per entry.
     /// </summary>
     public Task ReadEntriesAsync(string archivePath, IReadOnlyCollection<string> entryNames, long maxBytes, Func<EntryRead, Task> onEntry, CancellationToken cancellation) =>
-        Task.Run(() => BackgroundWork.Run(() =>
+        DevLog.Run("7z.read_many", () => BackgroundWork.Run(() =>
         {
             if (!File.Exists(archivePath)) throw new ModelGoneException("The archive is no longer there.");
             using var archive = OpenArchive.Open(archivePath);

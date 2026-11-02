@@ -116,7 +116,8 @@ public sealed class ZipArchiveReader : IArchiveReader
     public async Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous), archivePath);
+        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath);
+        using var opened = DevLog.Archive(archivePath, "zip");
         using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
         if (zip.Entries.Count > limits.MaxEntries)
             throw new InvalidDataException($"the zip has too many entries (limit {limits.MaxEntries:N0})");
@@ -149,7 +150,7 @@ public sealed class ZipArchiveReader : IArchiveReader
         Stream stream;
         try
         {
-            stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous), archivePath);
+            stream = IoMeter.Wrap(IoMeter.OpenFile(archivePath, 1 << 16, FileOptions.Asynchronous, "zip"), archivePath);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -157,6 +158,7 @@ public sealed class ZipArchiveReader : IArchiveReader
         }
         await using (stream)
         {
+            using var opened = DevLog.Archive(archivePath, "zip");
             using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
             var entry = zip.Entries.FirstOrDefault(e => NameOf(e) == entryName)
                 ?? throw new ModelGoneException("That file is no longer in the zip.");
@@ -174,7 +176,7 @@ public static class Hashing
 {
     public static async Task<string> HashFileAsync(string path, CancellationToken cancellation)
     {
-        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan), path);
+        await using var stream = IoMeter.Wrap(IoMeter.OpenFile(path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan, "hash"), path);
         return await HashStreamAsync(stream, cancellation);
     }
 
@@ -202,8 +204,8 @@ public sealed class ModelSource(IReadOnlyList<IArchiveReader> readers)
         }
         try
         {
-            if (IoMeter.Current is null) return await File.ReadAllBytesAsync(location.Path, cancellation);
-            await using var stream = IoMeter.Wrap(IoMeter.OpenFile(location.Path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan), location.Path);
+            if (IoMeter.Current is null) return await DevLog.ReadAllBytesAsync(location.Path, "model", cancellation);
+            await using var stream = IoMeter.Wrap(IoMeter.OpenFile(location.Path, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan, "model"), location.Path);
             var bytes = new byte[stream.Length];
             await stream.ReadExactlyAsync(bytes, cancellation);
             return bytes;

@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 using System.Security.Cryptography;
 using Xandrite.Library.Scanning;
 
@@ -50,7 +51,7 @@ public static class Downloads
                 FileStream output;
                 try
                 {
-                    output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
+                    output = DevLog.Open(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous, "download");
                 }
                 catch (IOException) when (File.Exists(target))
                 {
@@ -90,7 +91,7 @@ public static class Downloads
                 Step(row.Path);
                 try
                 {
-                    await using var input = new FileStream(row.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 16, useAsync: true);
+                    await using var input = DevLog.OpenRead(row.Path, 1 << 16, FileOptions.Asynchronous, "download");
                     await Write(row, input);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)

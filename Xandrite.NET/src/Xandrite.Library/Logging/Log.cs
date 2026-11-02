@@ -90,9 +90,16 @@ public sealed partial class FileLog : ILog, IDisposable
 
     public void Error(string evt, params ReadOnlySpan<(string Key, object? Value)> fields) => Write("ERROR", evt, fields);
 
+    /// <summary>
+    /// Adds the managed id of the thread that wrote it to every line (<c>tid=12</c>, at the end, so the fields before
+    /// it keep their places). A developer option.
+    /// </summary>
+    public bool ThreadIds { get; set; }
+
     private void Write(string level, string evt, ReadOnlySpan<(string Key, object? Value)> fields)
     {
         string line = FormatLine(level, evt, fields, DateTimeOffset.Now);
+        if (ThreadIds && !line.Contains(" tid=", StringComparison.Ordinal)) line += " tid=" + Environment.CurrentManagedThreadId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         bool flushNow;
         lock (_gate)
         {

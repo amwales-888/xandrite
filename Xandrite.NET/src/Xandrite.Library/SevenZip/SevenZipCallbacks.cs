@@ -162,6 +162,9 @@ internal sealed unsafe class OpenCallback : NativeObject
 {
     private readonly IoMeter? _meter = IoMeter.Current;
 
+    /// <summary>Volumes 7-Zip asked for beyond the first (a multi-volume RAR set).</summary>
+    public int VolumeCount { get; private set; }
+
     private static readonly void** OpenTable = Vtable(
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetTotal,
         (nint)(delegate* unmanaged[Stdcall]<nint, ulong*, ulong*, int>)&SetCompleted);
@@ -216,7 +219,8 @@ internal sealed unsafe class OpenCallback : NativeObject
             string file = Path.GetFileName(ReadWide(name));
             string path = Path.Combine(Path.GetDirectoryName(self._firstVolume) ?? "", file);
             if (file.Length == 0 || !File.Exists(path)) return S_FALSE;   // no such volume: 7-Zip reports the set as incomplete
-            Stream input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
+            Stream input = DevLog.OpenRead(path, 1 << 16, FileOptions.None, "rar volume");
+            self.VolumeCount++;
             if (self._meter is { } meter) input = new MeteredStream(input, meter, path);   // 7-Zip's thread: use the meter of whoever opened the set
             var volume = new InStream(input);
             self._volumes.Add(volume);
@@ -406,7 +410,7 @@ internal sealed class SplitStream : Stream
 
     public SplitStream(IReadOnlyList<string> paths)
     {
-        _parts = paths.Select(p => IoMeter.OpenFile(p, 1 << 16)).ToArray();
+        _parts = paths.Select(p => IoMeter.OpenFile(p, 1 << 16, purpose: "archive part")).ToArray();
         _starts = new long[_parts.Length + 1];
         for (int i = 0; i < _parts.Length; i++) _starts[i + 1] = _starts[i] + _parts[i].Length;
     }

@@ -1,3 +1,4 @@
+using Xandrite.Library.Logging;
 namespace Xandrite.Library.Thumbnails;
 
 /// <summary>Writing thumbnail images safely: the queue and the viewer can both write the same model's image.</summary>
@@ -44,7 +45,7 @@ public static class ThumbnailFiles
     {
         Directory.CreateDirectory(Path.GetDirectoryName(final)!);
         string temporary = final + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
-        await File.WriteAllBytesAsync(temporary, png).ConfigureAwait(false);
+        await DevLog.WriteAllBytesAsync(temporary, png, "thumbnail").ConfigureAwait(false);
         try
         {
             for (int attempt = 1; ; attempt++)
