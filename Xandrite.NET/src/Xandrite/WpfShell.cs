@@ -10,7 +10,11 @@ namespace Xandrite.App;
 /// <summary>Runs view-model work on the WPF UI thread.</summary>
 public sealed class WpfDispatcher(Dispatcher dispatcher) : IUiDispatcher
 {
-    public void Post(Action action) => dispatcher.BeginInvoke(action);
+    /// <summary>
+    /// Runs on the UI thread after input and drawing: background work (thumbnails made, scan progress) posts here many
+    /// times a second, and at the default (Normal) priority it went ahead of clicks, keys and repainting the window.
+    /// </summary>
+    public void Post(Action action) => dispatcher.BeginInvoke(action, DispatcherPriority.Background);
 }
 
 /// <summary>Dialogs, the clipboard, Explorer and the preview window, for the view models.</summary>

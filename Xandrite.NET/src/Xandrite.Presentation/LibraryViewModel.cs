@@ -1335,6 +1335,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
                     (stats.Missing > 0 ? $" · {stats.Missing:N0} missing" : "");
         CopiesText = stats.DuplicateGroups > 0 ? $"{stats.DuplicateGroups:N0} with copies" : "";
         OnPropertyChanged(nameof(Roots));
+        _queue.RecountLater();   // the status bar's thumbnail counts, after folders were added, removed or scanned
         if (!keepTiles)
         {
             Reload();
