@@ -33,7 +33,7 @@ public sealed record WalkItem
 /// </summary>
 public static partial class FolderWalker
 {
-    public static readonly IReadOnlySet<string> ModelExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".stl", ".3mf" };
+    public static readonly IReadOnlySet<string> ModelExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".stl", ".3mf", ".obj" };
     public static readonly IReadOnlySet<string> ArchiveExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".zip", ".7z", ".rar" };
 
     // Split archives. 7-Zip opens a whole set from its first part, so only the first part counts as an archive:

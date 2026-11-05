@@ -94,7 +94,7 @@ WARN  scan.slow what=read path=\\server\models\Kits\big.7z.003 ms=2810 bytes=655
 
 ## Thumbnails
 
-Each `thumb.ok` line now has `load_ms` (reading the STL or 3MF), `render_ms` (drawing) and `encode_ms` (making the
+Each `thumb.ok` line now has `load_ms` (reading the STL, 3MF or OBJ), `render_ms` (drawing) and `encode_ms` (making the
 PNG), as well as `read_ms`. Every minute, `thumbs.progress` gives `per_min` (thumbnails a minute, lately) and
 `read_mb_s`. `thumbs.end` totals `read_ms`, `hash_ms`, `load_ms`, `render_ms`, `encode_ms` and `write_ms`, so the
 largest of them is where the run's time went. Slow single reads are logged as `thumbs.slow what=read`.

@@ -260,6 +260,15 @@ public sealed class SevenZipArchiveReader : IArchiveReader
     /* ---------- IArchiveReader ---------- */
 
     public Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation) =>
+        EachModelEntryAsync(archivePath, onEntry, onProblem, limits, null, cancellation);
+
+    /// <summary>
+    /// Entries the library already has unchanged are not extracted: they are handed over first, without content. So
+    /// rescanning a changed archive decompresses only its new or changed models (for a solid archive, also what comes
+    /// before them in the same block), and one whose models are all known is only listed.
+    /// </summary>
+    public Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits,
+        Func<string, long, long?, bool>? isUnchanged, CancellationToken cancellation) =>
         DevLog.Run("7z.scan", () =>
         {
             cancellation.ThrowIfCancellationRequested();
@@ -292,6 +301,18 @@ public sealed class SevenZipArchiveReader : IArchiveReader
 
             // An entry without a date of its own takes the archive's (as in the JS app).
             double archiveTime = FileTimes.ToNodeMs(File.GetLastWriteTimeUtc(archivePath));
+            if (isUnchanged is not null)
+            {
+                foreach (var (index, (item, format)) in eligible.OrderBy(e => e.Key).ToList())
+                {
+                    if (!isUnchanged(item.Name, item.Size, item.Crc32)) continue;
+                    eligible.Remove(index);
+                    string name = item.Name;
+                    onEntry(new ArchiveEntry(item.Name, format, item.Size, item.MtimeMs ?? archiveTime, item.Crc32,
+                        () => throw new InvalidOperationException($"{name} is unchanged, so it was not extracted."))).GetAwaiter().GetResult();
+                }
+                if (eligible.Count == 0) return nested;   // nothing new: the archive was only listed
+            }
             archive.Extract(eligible.Keys.ToList(), limits.MaxEntryBytes, (index, content, result, tooLarge) =>
             {
                 var (item, format) = eligible[index];

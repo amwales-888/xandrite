@@ -123,6 +123,8 @@ public sealed class LibraryDatabase : IDisposable
     /// Columns added after the first release of the Electron app. Older databases get them here; nothing stored changes.
     ///   container / entry  set for a model inside an archive: the archive's path and the entry's name in it
     ///   crc32              the entry's checksum, used to tell that an entry is unchanged
+    /// and to containers:
+    ///   formats            the kinds of model the archive was looked through for
     /// </summary>
     private void Migrate()
     {
@@ -132,6 +134,10 @@ public sealed class LibraryDatabase : IDisposable
             if (!have.Contains(name)) _db.Exec($"ALTER TABLE locations ADD COLUMN {name} {type}");
         }
         _db.Exec("CREATE INDEX IF NOT EXISTS idx_locations_container ON locations(container)");
+        // formats: the kinds of model an archive was looked through for (".3mf,.obj,.stl"); empty for archives read
+        // before .obj files were, which are therefore looked through once more.
+        if (!_db.Query("PRAGMA table_info(containers)", r => r.GetString(1)).Contains("formats"))
+            _db.Exec("ALTER TABLE containers ADD COLUMN formats TEXT");
     }
 
     /// <summary>Runs work holding the database lock, inside a transaction that is rolled back if it throws.</summary>

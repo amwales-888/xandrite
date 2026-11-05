@@ -42,9 +42,9 @@ Thumbnails are PNG files named `<sha256>.png` in a `thumbnails` folder beside it
 | Table | Key | What a row says |
 | --- | --- | --- |
 | `roots` | `path` | A folder the user added; `added_at`, `last_scanned_at` (set only by a complete, uncancelled scan). |
-| `models` | `sha256` | One distinct content: `size`, `format` (stl or 3mf), `first_seen_at`. Inserted with `INSERT OR IGNORE`, so a second copy changes nothing. |
+| `models` | `sha256` | One distinct content: `size`, `format` (stl, 3mf or obj), `first_seen_at`. Inserted with `INSERT OR IGNORE`, so a second copy changes nothing. |
 | `locations` | `path` | One place a model was found: `root`, `sha256`, `size`, `mtime_ms`, `last_seen_scan`, `added_scan`, `missing` (0/1). For a model inside an archive also `container` (the archive's path), `entry` (the name inside it, forward slashes) and `crc32` (the archive's checksum for that entry). |
-| `containers` | `path` | An archive read completely without problems: `root`, `size`, `mtime_ms`, `last_seen_scan`. Its presence means "unchanged since then, no need to open it". |
+| `containers` | `path` | An archive read completely without problems: `root`, `size`, `mtime_ms`, `last_seen_scan`, `formats` (the kinds of model it was looked through for, `.3mf,.obj,.stl`). Its presence means "unchanged since then, no need to open it", as long as `formats` matches the kinds read now. |
 | `thumbnails` | `sha256` | `status` (ok or failed), `render_version`, `size_px`, `error`, `created_at`. No row means "never drawn". |
 | `ratings` | `sha256` | 0 to 5 stars. No row means unrated. |
 | `views` | `sha256` | A saved camera (position, target, field of view, Z-up) used instead of the automatic one. |
@@ -76,6 +76,11 @@ For an entry inside an archive the comparison is `size` plus `crc32` for its vir
 entry's date, because zip readers disagree on dates). A whole archive whose file `size` and `mtime_ms` match its
 `containers` row is not opened at all: every location with that `container` is marked seen in one statement.
 
+When a new kind of model is supported (`.obj` was added after `.stl` and `.3mf`), archives recorded with the older
+set of kinds are opened once more on the next scan. Their known models are not read again: zip entries are only
+decompressed when opened, and 7-Zip is told which entries the library already has unchanged and leaves them out of
+the extraction, so an archive with nothing new in it is only listed.
+
 ### What decides that a model needs a thumbnail
 
 A model needs one when it is present somewhere (`EXISTS` a location with `missing = 0`) and either has no
@@ -98,7 +103,7 @@ root, one after another.
 1. **Open the scan.** Check the folder exists. Choose the scan id. Read the root's previous `last_scanned_at` for the
    statistics. Start a progress timer (every 30 seconds) for the log.
 2. **Walk the tree.** A single loop enumerates the folder depth first and yields one item per model file (`.stl`,
-   `.3mf`), per archive (`.zip`, `.7z`, `.rar`, and the first part of a split set), or per problem (a folder or file
+   `.3mf`, `.obj`), per archive (`.zip`, `.7z`, `.rar`, and the first part of a split set), or per problem (a folder or file
    that could not be read). It skips names starting with `.` and `__MACOSX`, and does not follow symbolic links or
    junctions, so a link back up the tree cannot loop. Later parts of a split set (`.7z.002`, `.part2.rar`, `.r00`) are
    not yielded; the first part carries the set, and a set with a part missing is yielded as incomplete.
@@ -157,7 +162,7 @@ Each entry name is classified before anything is decompressed:
 - folders, names with a segment starting with `.`, and `__MACOSX` → skipped quietly;
 - `..` or `.` segments → skipped and reported as unsafe;
 - an archive inside the archive (nested) → not opened, only counted;
-- anything that is not `.stl` or `.3mf` → skipped;
+- anything that is not `.stl`, `.3mf` or `.obj` → skipped;
 - password-protected → reported, not read;
 - larger than 2 GB uncompressed → reported, not read;
 - over 200 MB and compressed more than 1000 : 1 → reported as a likely zip bomb; for 7-Zip the whole archive is
@@ -170,7 +175,8 @@ The archive's directory may hold at most 200,000 entries.
 1. For each eligible entry, in archive order, the reader hands over the entry's name, size, date, CRC-32 and a way to
    open its bytes.
 2. If the entry's virtual path is known with the same size and CRC-32, it is marked seen and nothing is decompressed
-   (for 7-Zip the bytes have already been produced by the one-pass extract, but are not hashed).
+   (7-Zip asks before extracting, and leaves known entries out; for a solid archive, what comes before a new entry
+   in the same block is still decompressed to reach it).
 3. Otherwise the bytes are hashed and stored like a loose file, with `container`, `entry` and `crc32` set.
 4. An entry that fails is marked seen (its old row survives) and reported; the archive is then not "clean".
 5. A clean archive gets a `containers` row with its size and date, so the next scan skips it unopened. A failed one
@@ -213,7 +219,7 @@ at any point and carry on later.
    - hash the bytes and compare with the SHA-256 the scan recorded; if they differ, the file changed since the scan, so
      skip it (the next scan will record the new content);
    - look up a saved view for that SHA-256;
-   - parse the STL or 3MF into a mesh, render it off-screen with Direct3D 11, encode a PNG;
+   - parse the STL, 3MF or OBJ into a mesh, render it off-screen with Direct3D 11, encode a PNG;
    - under a per-SHA lock, check the saved view did not change while drawing (the viewer may have saved one: its image
      wins);
    - write the PNG to a unique temporary name, then move it over `<sha256>.png` (retrying briefly if the file is in
@@ -245,6 +251,11 @@ alphabetically:
 - identical files are drawn once: a model's job uses its alphabetically first present location.
 
 So a zip stored as `z.stl, a.stl, m.stl` is drawn z, a, m.
+
+### Which way up
+
+The automatic view stands STL and 3MF models with Z up, and OBJ models with Y up, the convention of the programs
+that write OBJ files (Blender, ZBrush, Maya). A saved view records its own choice.
 
 ### Speed
 
@@ -376,7 +387,7 @@ adds the views on top. Build them in this order, each testable on its own.
   path; group archives; N workers each owning a renderer; a bounded channel per archive being read; re-hash before
   drawing; temporary file then move; record ok or failed; speed limits, pause gate, blocked state for renderer
   failures.
-- [ ] **Renderer.** Parse STL (text and binary) and 3MF into a mesh, frame it (or use the saved view), render
+- [ ] **Renderer.** Parse STL (text and binary), 3MF and OBJ into a mesh, frame it (or use the saved view), render
   512 × 512 off-screen, encode PNG. Give it a render version, stored with each thumbnail, so a change of look redraws
   everything.
 - [ ] **Driver.** A command line that adds a folder, scans it, runs the queue until Idle, and prints the scan and run

@@ -19,7 +19,7 @@ It keeps a log file. Not yet done: the installer.
 |---|---|
 | `src/Xandrite` | The WPF app (`Xandrite.exe`): the library window, the viewer, Manage folders, About, and the image loader. Thin: the logic is in `Xandrite.Presentation`. |
 | `src/Xandrite.Presentation` | The windows' logic as plain view models (no WPF types). `LibraryViewModel` covers filters, sorting, the tree, tiles in rows, selection, ratings, scanning and thumbnail status. `ViewerViewModel` covers frames, orbiting, Update, Revert, rating and export. Tested on any OS. |
-| `src/Xandrite.Core` | Everything that needs no GPU: STL and 3MF readers, camera framing, lighting and material values, the view settings stored in each PNG, the PNG writer. No Windows dependencies, so it builds and tests anywhere. |
+| `src/Xandrite.Core` | Everything that needs no GPU: STL, 3MF and OBJ readers, camera framing, lighting and material values, the view settings stored in each PNG, the PNG writer. No Windows dependencies, so it builds and tests anywhere. |
 | `src/Xandrite.Rendering.Direct3D11` | The renderer. Hand-written COM interop to `d3d11.dll`, `dxgi.dll` and `d3dcompiler_47.dll` (all part of Windows), plus the HLSL shader. No NuGet packages. |
 | `src/Xandrite.ThumbTool` | `xandrite-thumb`, a command-line thumbnail maker for trying real files, timing, scripts and CI. |
 | `src/Xandrite.Library` | The library. `LibraryDatabase` (a port of `db.js`, same schema), `FolderWalker` (`scanner.js`), `LibraryScanner` (`indexer.js`), `ThumbnailQueue` (`thumbnail-queue.js`), `Downloads`, `ModelSource`, `ElectronImport`, and the archive readers: zip in .NET, and .7z/.rar through 7-Zip's `7z.dll` (`SevenZip/`). SQLite is called through its C API: Windows' own `winsqlite3.dll`. No NuGet packages. |
@@ -34,7 +34,7 @@ It keeps a log file. Not yet done: the installer.
 
 `ThumbnailGenerator` does what the JS app's `renderer/thumbnail-worker.js` did:
 
-1. **Read** the file into a flat list of triangles (`ModelLoader` → `StlReader` / `ThreeMfReader`). 3MF build-item and
+1. **Read** the file into a flat list of triangles (`ModelLoader` → `StlReader` / `ThreeMfReader` / `ObjReader`). 3MF build-item and
    component transforms are applied here, including components in other model files (Bambu Studio, Orca Slicer,
    PrusaSlicer), and colours from `<basematerials>` and `<m:colorgroup>` are kept.
 2. **Frame** it (`ViewMath`, ported from `view.js`): turn Z up, centre the bounding box, and place the camera on the
@@ -130,7 +130,7 @@ of the Electron app's viewer:
   here for models opened from the library.
 - **Update thumbnail** replaces the model's library thumbnail with what you see (512 px) and stores the view, so a
   later redraw uses it. The grid shows the new image straight away. **Revert to automatic view** forgets it.
-- **Z up** turns the file's Z axis upwards (on by default, as STL and 3MF files are normally Z-up).
+- **Z up** turns the file's Z axis upwards (on by default for STL and 3MF files, which are normally Z-up; off for OBJ files, which are normally Y-up).
 - **Advanced** → **Export as…** saves the view as a PNG at 256 to 2048 px, named after the model by default, and
   shows the view settings stored inside it.
 - The viewer is opened from the library. A file dropped onto it can be looked at too, even from outside the library.

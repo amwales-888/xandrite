@@ -39,6 +39,16 @@ public interface IArchiveReader
     /// </summary>
     Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits, CancellationToken cancellation);
 
+    /// <summary>
+    /// The same, told which entries the library already has unchanged (by entry name, size and CRC-32), so a reader
+    /// that decompresses entries before handing them over (7-Zip) can leave those out. They are still handed to
+    /// <paramref name="onEntry"/>, in order, but their content is not read; opening it throws. A reader that only
+    /// decompresses an entry when it is opened (zip) does not need this.
+    /// </summary>
+    Task<int> EachModelEntryAsync(string archivePath, Func<ArchiveEntry, Task> onEntry, Action<string, string> onProblem, ArchiveLimits limits,
+        Func<string, long, long?, bool>? isUnchanged, CancellationToken cancellation) =>
+        EachModelEntryAsync(archivePath, onEntry, onProblem, limits, cancellation);
+
     /// <summary>Reads one entry into memory. Throws <see cref="ModelGoneException"/> if the archive or entry is gone.</summary>
     Task<byte[]> ReadEntryAsync(string archivePath, string entryName, long maxBytes, CancellationToken cancellation);
 

@@ -9,7 +9,7 @@ namespace Xandrite.Thumbnails;
 
 /// <summary>One model to draw. Mirrors the job the JS app's thumbnail queue sent to its hidden render window.</summary>
 /// <param name="Data">The whole model file.</param>
-/// <param name="Format">"stl" or "3mf".</param>
+/// <param name="Format">"stl", "3mf" or "obj".</param>
 /// <param name="Name">File name, recorded in the PNG.</param>
 /// <param name="Sha256">Content hash, recorded in the PNG. May be empty when drawing a file outside the library.</param>
 /// <param name="View">A view the person saved, or null for the automatic view.</param>
@@ -32,7 +32,7 @@ public sealed class ThumbnailGenerator(IModelRenderer renderer)
         var loadTime = clock.Elapsed;
 
         var (png, json, renderTime, encodeTime) = Draw(mesh, job.View, job.SizePx,
-            new ThumbnailFileInfo(job.Name, job.Format.TrimStart('.'), job.Data.Length, job.Sha256));
+            new ThumbnailFileInfo(job.Name, job.Format.TrimStart('.'), job.Data.Length, job.Sha256), ModelLoader.UsuallyZUp(job.Format));
         return new ThumbnailResult(png, mesh.TriangleCount, json, loadTime, renderTime, encodeTime);
     }
 
