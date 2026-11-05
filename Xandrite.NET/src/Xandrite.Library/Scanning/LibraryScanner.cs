@@ -73,6 +73,12 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
 
     private static double Mb(long bytes) => Math.Round(bytes / 1048576.0, 1);
 
+    /// <summary>
+    /// The kinds of model an archive is looked through for (".3mf,.obj,.stl"), recorded with each archive read. An
+    /// unchanged archive recorded with a different set is read again, so a newly supported kind is found inside it.
+    /// </summary>
+    public static string ScannedFormats { get; } = string.Join(",", FolderWalker.ModelExtensions.Select(e => e.ToLowerInvariant()).Order(StringComparer.Ordinal));
+
     private static double? Rate(Meter meter) => meter.MBpsForLog;
 
     /// <summary>
@@ -209,8 +215,9 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
             """;
         const string MarkContainerSeen = "UPDATE locations SET last_seen_scan = ? WHERE container = ? AND missing = 0";
         const string SaveContainer = """
-            INSERT INTO containers(path, root, size, mtime_ms, last_seen_scan) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET root = excluded.root, size = excluded.size, mtime_ms = excluded.mtime_ms, last_seen_scan = excluded.last_seen_scan
+            INSERT INTO containers(path, root, size, mtime_ms, last_seen_scan, formats) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET root = excluded.root, size = excluded.size, mtime_ms = excluded.mtime_ms,
+              last_seen_scan = excluded.last_seen_scan, formats = excluded.formats
             """;
         const string TouchContainer = "UPDATE containers SET last_seen_scan = ? WHERE path = ?";
 
@@ -259,6 +266,14 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
         // Every model entry is hashed from its decompressed bytes. Entries whose size and checksum are unchanged are not
         // read again. (The JS app also compared entry dates; .NET reads zip dates slightly differently, and the CRC-32
         // already tells whether the content changed.)
+        // An entry is unchanged when its path is known with the same size and CRC-32 (the reader may ask before extracting).
+        bool EntryUnchanged(string virtualPath, long size, long? crc32)
+        {
+            var known = db.Locked(c => c.QueryFirst("SELECT size, crc32 FROM locations WHERE path = ?",
+                r => (Size: r.GetInt64(0), Crc: r.GetInt64OrNull(1)), virtualPath));
+            return known.Crc is { } crc && known.Size == size && crc == crc32;
+        }
+
         async Task ScanArchive(WalkItem item, IArchiveReader reader)
         {
             using var work = DevLog.Work("scan.archive");
@@ -278,9 +293,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
                         Count(c => c.Found++);
                         Interlocked.Increment(ref models);
                         string virtualPath = ArchiveEntryNames.VirtualPath(item.Path, entry.EntryName);
-                        var known = db.Locked(c => c.QueryFirst("SELECT size, crc32 FROM locations WHERE path = ?",
-                            r => (Size: r.GetInt64(0), Crc: r.GetInt64OrNull(1)), virtualPath));
-                        if (known.Crc is { } crc && known.Size == entry.Size && crc == entry.Crc32)
+                        if (EntryUnchanged(virtualPath, entry.Size, entry.Crc32))
                         {
                             db.Locked(c => c.Execute(MarkSeen, scanId, virtualPath));
                             Count(c => c.Reused++);
@@ -308,7 +321,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
                         Report(virtualPath);
                     },
                     (entryName, message) => Problem(ArchiveEntryNames.VirtualPath(item.Path, entryName), message),
-                    Limits, cancellation);
+                    Limits, (entryName, size, crc) => EntryUnchanged(ArchiveEntryNames.VirtualPath(item.Path, entryName), size, crc), cancellation);
                 Count(c => { c.Nested += nested; c.Archives++; });
                 long ms = (long)Stopwatch.GetElapsedTime(archiveStarted).TotalMilliseconds;
                 // read_ms: waiting for the disk or network. models_ms: hashing and storing the models.
@@ -341,7 +354,7 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
                 metrics.Busy.Add(elapsed);
             }
             // A clean read is remembered, so an unchanged archive is not opened again; otherwise it is looked at next scan.
-            db.Locked(c => c.Execute(clean ? SaveContainer : TouchContainer, clean ? [item.Path, root, item.Size, item.MtimeMs, scanId] : [scanId, item.Path]));
+            db.Locked(c => c.Execute(clean ? SaveContainer : TouchContainer, clean ? [item.Path, root, item.Size, item.MtimeMs, scanId, ScannedFormats] : [scanId, item.Path]));
             Report(item.Path);
         }
 
@@ -414,9 +427,11 @@ public sealed class LibraryScanner(LibraryDatabase database, ModelSource? source
                     Report(item.Path);
                     continue;
                 }
-                var stored = db.Locked(c => c.QueryFirst("SELECT size, mtime_ms FROM containers WHERE path = ?",
-                    r => (Size: r.GetInt64(0), Mtime: r.GetDouble(1), Known: true), item.Path));
-                if (stored.Known && stored.Size == item.Size && stored.Mtime == item.MtimeMs)
+                var stored = db.Locked(c => c.QueryFirst("SELECT size, mtime_ms, formats FROM containers WHERE path = ?",
+                    r => (Size: r.GetInt64(0), Mtime: r.GetDouble(1), Formats: r.GetStringOrNull(2), Known: true), item.Path));
+                // Unchanged, and looked through for every kind of model read now: an archive scanned before .obj files
+                // were read is opened once more, in case it holds some.
+                if (stored.Known && stored.Size == item.Size && stored.Mtime == item.MtimeMs && stored.Formats == ScannedFormats)
                 {
                     int n = db.Locked(c =>
                     {

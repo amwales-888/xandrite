@@ -3,7 +3,7 @@
 *Every model has a side worth seeing.*
 
 Xandrite is a Windows app for browsing a collection of 3D models by thumbnail. Point it at the folders where you
-keep your `.stl` and `.3mf` files. It finds every model, including models inside `.zip`, `.7z` and `.rar` archives,
+keep your `.stl`, `.3mf` and `.obj` files. It finds every model, including models inside `.zip`, `.7z` and `.rar` archives,
 and draws a thumbnail of each one. You can then search, sort, filter, rate and open your models in a 3D viewer.
 
 Your files are never changed. Xandrite only reads them, and keeps what it learns in a library of its own.
@@ -101,8 +101,15 @@ Either way, **your files are never touched**: removing a folder only takes it ou
 ## 4. Scanning: how Xandrite finds models
 
 When you add a folder, Xandrite **scans** it. It looks at every file and recognises the models: `.stl`
-(binary or text) and `.3mf`. It also looks inside archives (`.zip`, `.7z` and `.rar`, including split and
+(binary or text), `.3mf` and `.obj`. It also looks inside archives (`.zip`, `.7z` and `.rar`, including split and
 multi-part archives) and reads the models they contain without unpacking them to disk.
+
+For an `.obj` file Xandrite reads its shape only: textures and the materials in a separate `.mtl` file are not
+used, so the model is drawn in the same grey as an STL (vertex colours, which some programs write, are kept).
+
+> **Libraries scanned before `.obj` files were supported:** run **Rescan All** once. Loose `.obj` files are found
+> straight away. Each archive is looked through once more for `.obj` files inside it; models already in the library
+> are not read again, so this is much quicker than the first scan.
 
 Each model is identified by its **contents**, not its name, using a SHA-256 fingerprint. This means:
 
@@ -290,8 +297,9 @@ The view never rolls or flips over the top, so the model always stays the right 
 
 - **File:** the model's name, format, file size, number of triangles, dimensions, SHA-256 and **Rating**. You can change
   the rating here.
-- **Z up:** STL and 3MF files usually treat Z as "up", so this is on by default. If a model appears lying on its
-  side, try turning it off.
+- **Z up:** STL and 3MF files usually treat Z as "up", so this is on by default for them. OBJ files usually treat Y
+  as "up", so it starts off for them. If a model appears lying on its side, switch it; **Update thumbnail** then
+  keeps that choice for the model's thumbnail too.
 - **Update thumbnail:** makes what you see now the model's thumbnail in the library, and remembers the view. The
   library grid updates straight away and marks the tile *custom view*. If the thumbnail is ever redrawn, this view
   is used.
@@ -307,7 +315,7 @@ PNG image. The file is named after the model by default (`twisted-vase.png`, for
 Advanced also shows the view settings stored inside the image. Xandrite uses them to redraw a thumbnail exactly as
 you left it.
 
-> You can also drag an `.stl` or `.3mf` file from File Explorer onto the viewer to look at it, even one that isn't in
+> You can also drag an `.stl`, `.3mf` or `.obj` file from File Explorer onto the viewer to look at it, even one that isn't in
 > your library. A file from outside the library can be looked at and exported, but not rated or given a thumbnail. If the
 > same model is already in your library, **Update thumbnail** works for it.
 

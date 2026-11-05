@@ -63,7 +63,7 @@ public sealed class ThumbnailQueue : IAsyncDisposable
     {
         public IoMeter Io { get; init; } = new();   // reading models and archives from disk or the network
         public Meter Hash { get; } = new();         // checking the bytes are still the model the scan found
-        public Meter Load { get; } = new();         // parsing the STL or 3MF
+        public Meter Load { get; } = new();         // parsing the STL, 3MF or OBJ
         public Meter Render { get; } = new();       // drawing (Direct3D)
         public Meter Encode { get; } = new();       // making the PNG
         public Meter Write { get; } = new();        // saving the PNG and recording it in the library

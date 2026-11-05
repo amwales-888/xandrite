@@ -119,7 +119,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
         private set => Set(ref _adapter, value);
     }
 
-    /// <summary>Turns the file's Z axis upwards (STL and 3MF files are normally Z-up). Changing it resets the view.</summary>
+    /// <summary>Turns the file's Z axis upwards (STL and 3MF files are normally Z-up, OBJ files Y-up). Changing it resets the view.</summary>
     public bool ZUp
     {
         get => _zUp;
@@ -288,7 +288,7 @@ public sealed class ViewerViewModel : ObservableObject, IDisposable
 
             var saved = inLibrary ? _db.GetView(sha) : null;
             HasCustomView = saved is not null;
-            _zUp = saved?.ZUp ?? true;
+            _zUp = saved?.ZUp ?? ModelLoader.UsuallyZUp(document.Format);
             _frame = ViewMath.OrientAndCentre(mesh.Bounds, _zUp);
             if (saved is not null)
                 Camera.SetView(new StoredView(ToVector(saved.Position), ToVector(saved.Target), (float)saved.FovDeg, saved.ZUp), _frame.Radius);

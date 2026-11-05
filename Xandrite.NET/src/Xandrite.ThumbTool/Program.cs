@@ -10,7 +10,7 @@ using Xandrite.Thumbnails;
 //
 //   xandrite-thumb <file or folder>... [-o <folder>] [--size 512] [--by-hash] [--software] [--debug] [--view view.png]
 //
-// Folders are searched (with subfolders) for .stl and .3mf files.
+// Folders are searched (with subfolders) for .stl, .3mf and .obj files.
 
 const string Usage = """
     Usage: xandrite-thumb <file or folder>... [options]
