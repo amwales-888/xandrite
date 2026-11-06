@@ -34,7 +34,8 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     private List<TileViewModel> _tiles = [];
     private Dictionary<string, List<TileViewModel>> _bySha = [];
     private IReadOnlyList<TileRowViewModel> _rows = [];
-    private int _anchor = -1;
+    private int _anchor = -1;   // where a Shift range starts: the last tile clicked or moved to without Shift
+    private int _cursor = -1;   // where the keyboard is: the last tile clicked or moved to, with or without Shift
     private int _columns = 1;
     private double _viewportWidth = 800;
     private bool _loading;
@@ -815,6 +816,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         var kept = new Dictionary<string, TileViewModel>(StringComparer.Ordinal);
         if (keepTiles) foreach (var tile in _tiles) kept.TryAdd(tile.Row.Path, tile);
         var anchor = keepTiles && _anchor >= 0 && _anchor < _tiles.Count ? _tiles[_anchor] : null;
+        var cursor = keepTiles && _cursor >= 0 && _cursor < _tiles.Count ? _tiles[_cursor] : null;
         _tiles = page.Rows.Select((row, i) =>
         {
             if (kept.Remove(row.Path, out var tile))
@@ -829,6 +831,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         _bySha = _tiles.GroupBy(t => t.Row.Sha256).ToDictionary(g => g.Key, g => g.ToList());
         // The last clicked tile stays the anchor for Shift-click if it is still shown.
         _anchor = anchor is not null && anchor.Index < _tiles.Count && ReferenceEquals(_tiles[anchor.Index], anchor) ? anchor.Index : -1;
+        _cursor = cursor is not null && cursor.Index < _tiles.Count && ReferenceEquals(_tiles[cursor.Index], cursor) ? cursor.Index : _anchor;
         Total = page.Total;
         OnPropertyChanged(nameof(Tiles));
         OnPropertyChanged(nameof(ListText));
@@ -884,21 +887,19 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
     {
         if (shift && _anchor >= 0 && _anchor < _tiles.Count)
         {
-            if (!ctrl) foreach (var t in _tiles) t.IsSelected = false;
-            int from = Math.Min(_anchor, tile.Index), to = Math.Max(_anchor, tile.Index);
-            for (int i = from; i <= to; i++) _tiles[i].IsSelected = true;
+            SelectRange(tile.Index, keepOthers: ctrl);
         }
         else if (ctrl)
         {
             tile.IsSelected = !tile.IsSelected;
-            _anchor = tile.Index;
+            _anchor = _cursor = tile.Index;
         }
         else
         {
             bool onlyThis = tile.IsSelected && _tiles.Count(t => t.IsSelected) == 1;
             foreach (var t in _tiles) t.IsSelected = false;
             tile.IsSelected = !onlyThis;
-            _anchor = tile.Index;
+            _anchor = _cursor = tile.Index;
         }
         SelectionChanged();
     }
@@ -913,7 +914,7 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         {
             foreach (var t in _tiles) t.IsSelected = false;
             tile.IsSelected = true;
-            _anchor = tile.Index;
+            _anchor = _cursor = tile.Index;
             SelectionChanged();
         }
         return SelectedTiles;
@@ -931,21 +932,41 @@ public sealed class LibraryViewModel : ObservableObject, IAsyncDisposable
         SelectionChanged();
     }
 
-    /// <summary>Arrow keys: moves the selection by columns and rows.</summary>
-    public void Move(int dx, int dy)
+    /// <summary>
+    /// The arrow keys: move to the next tile (left, right) or the one above or below (up, down). With
+    /// <paramref name="shift"/>, select every tile from where the range started to the one moved to, in reading order,
+    /// as Explorer does: the start stays put, so Shift+Right then Shift+Left grows the range and then shrinks it again.
+    /// </summary>
+    public void Move(int dx, int dy, bool shift = false)
     {
         if (_tiles.Count == 0) return;
-        int from = _anchor >= 0 ? _anchor : -1;
+        int from = _cursor >= 0 && _cursor < _tiles.Count ? _cursor : -1;
         int to = from < 0 ? 0 : Math.Clamp(from + dx + dy * _columns, 0, _tiles.Count - 1);
-        foreach (var t in _tiles) t.IsSelected = false;
-        _tiles[to].IsSelected = true;
-        _anchor = to;
+        if (shift && _anchor >= 0 && _anchor < _tiles.Count && _tiles.Any(t => t.IsSelected))   // nothing selected: start afresh
+        {
+            SelectRange(to, keepOthers: false);
+        }
+        else
+        {
+            foreach (var t in _tiles) t.IsSelected = false;
+            _tiles[to].IsSelected = true;
+            _anchor = _cursor = to;
+        }
         SelectionChanged();
         ScrollRequested?.Invoke(_tiles[to]);
     }
 
+    /// <summary>Selects the tiles from the anchor to <paramref name="to"/>, which becomes where the keyboard is; the anchor stays.</summary>
+    private void SelectRange(int to, bool keepOthers)
+    {
+        if (!keepOthers) foreach (var t in _tiles) t.IsSelected = false;
+        int low = Math.Min(_anchor, to), high = Math.Max(_anchor, to);
+        for (int i = low; i <= high; i++) _tiles[i].IsSelected = true;
+        _cursor = to;
+    }
+
     /// <summary>The tile Enter opens: the last one clicked or moved to.</summary>
-    public TileViewModel? Current => _anchor >= 0 && _anchor < _tiles.Count ? _tiles[_anchor] : null;
+    public TileViewModel? Current => _cursor >= 0 && _cursor < _tiles.Count ? _tiles[_cursor] : null;
 
     /* ---------- ratings ---------- */
 

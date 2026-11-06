@@ -174,12 +174,13 @@ public partial class LibraryWindow : Window
         if (e.OriginalSource is ComboBox or Slider || !_vm.HasRoots) return;
 
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);   // Shift+arrow: select the tiles in between too
         switch (e.Key)
         {
-            case Key.Left: _vm.Move(-1, 0); break;
-            case Key.Right: _vm.Move(1, 0); break;
-            case Key.Up: _vm.Move(0, -1); break;
-            case Key.Down: _vm.Move(0, 1); break;
+            case Key.Left: _vm.Move(-1, 0, shift); break;
+            case Key.Right: _vm.Move(1, 0, shift); break;
+            case Key.Up: _vm.Move(0, -1, shift); break;
+            case Key.Down: _vm.Move(0, 1, shift); break;
             case Key.Enter when _vm.Current is { } current: await _vm.OpenAsync(current); break;
             case Key.A when ctrl: _vm.SelectAll(); break;
             case Key.F when ctrl: SearchBox.Focus(); SearchBox.SelectAll(); break;

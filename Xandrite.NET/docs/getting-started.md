@@ -237,6 +237,7 @@ the archive it's in, and why its thumbnail failed, if it did.
 | Select everything shown | **Ctrl+A**, or **Select all** in the selection bar |
 | Clear the selection | **Esc**, or **Clear selection** in the selection bar |
 | Move the selection | The arrow keys |
+| Select a range from the keyboard | **Shift** + the arrow keys: the first tile stays put, and the range grows or shrinks to the tile you move to |
 
 While models are selected, a blue **selection bar** appears under the toolbar. It shows how many are selected and
 offers **Download…**, **Rate** and **Copy paths** for all of them, plus **Select all** and **Clear selection**.
@@ -406,6 +407,7 @@ added, or how many thumbnails it drew. It keeps years of history, so you can com
 | **Ctrl+F** | Go to the search box |
 | **F5** | Rescan all folders |
 | **Arrow keys** | Move the selection |
+| **Shift** + **arrow keys** | Select the tiles between the first one and the one you move to |
 | **Enter** | Open the selected model in the viewer |
 | **1** – **5** | Rate the selection |
 | **0** | Clear the rating |

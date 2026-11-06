@@ -164,6 +164,48 @@ public class LibraryViewModelTests
     }
 
     [Fact]
+    public async Task ShiftAndTheArrowKeysSelectTheTilesInBetween()
+    {
+        var f = new Fixture(files: 10);
+        await using var cleanup = f;
+        await f.AddModelsFolder();
+        // The fixture lays the tiles out four to a row.
+        var t = f.Vm.Tiles;
+        int[] Selected() => f.Vm.SelectedTiles.Select(x => x.Index).ToArray();
+
+        f.Vm.Click(t[2], ctrl: false, shift: false);
+        f.Vm.Move(1, 0, shift: true);
+        f.Vm.Move(1, 0, shift: true);
+        Assert.Equal(new[] { 2, 3, 4 }, Selected());     // the start stays, the range grows
+        Assert.Equal(4, f.Vm.Current!.Index);             // Enter opens the tile moved to
+
+        f.Vm.Move(-1, 0, shift: true);
+        Assert.Equal(new[] { 2, 3 }, Selected());         // and shrinks again
+        f.Vm.Move(-1, 0, shift: true);
+        f.Vm.Move(-1, 0, shift: true);
+        Assert.Equal(new[] { 1, 2 }, Selected());         // past the start: the other way
+
+        f.Vm.Move(0, 1, shift: true);                     // down a row, from tile 1 to tile 5
+        Assert.Equal(new[] { 2, 3, 4, 5 }, Selected());
+        f.Vm.Move(1, 0, shift: true);
+        Assert.Equal(new[] { 2, 3, 4, 5, 6 }, Selected());
+
+        f.Vm.Move(1, 0);                                  // without Shift: one tile, from where the keyboard was
+        Assert.Equal(new[] { 7 }, Selected());
+        f.Vm.Move(1, 0, shift: true);
+        Assert.Equal(new[] { 7, 8 }, Selected());         // a new range starts there
+
+        f.Vm.Click(t[0], ctrl: false, shift: false);
+        f.Vm.Click(t[3], ctrl: false, shift: true);       // Shift-click, then Shift+arrow carries on from it
+        f.Vm.Move(1, 0, shift: true);
+        Assert.Equal(new[] { 0, 1, 2, 3, 4 }, Selected());
+
+        f.Vm.ClearSelection();
+        f.Vm.Move(1, 0, shift: true);                     // nothing selected yet: Shift+arrow just picks the first tile
+        Assert.Single(Selected());
+    }
+
+    [Fact]
     public async Task RightClickOutsideTheSelectionSelectsJustThatTile()
     {
         await using var f = new Fixture(files: 6);
